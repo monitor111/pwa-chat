@@ -26,6 +26,10 @@ class ChatApp {
         
         this.unsubscribe = null;
         this.hiddenMessages = new Set(this.loadHiddenMessages());
+        this.isFirstLoad = true; // Флаг для первой загрузки
+        
+        // Создаём звук уведомления
+        this.notificationSound = this.createNotificationSound();
         
         this.init();
     }
@@ -34,6 +38,30 @@ class ChatApp {
         this.setupEventListeners();
         this.checkAuth();
         this.setupPWA();
+    }
+
+    // Создание звука уведомления
+    createNotificationSound() {
+        // Создаём AudioContext для генерации звука
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        return () => {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Настройки звука (приятный "дзинь")
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(600, audioContext.currentTime + 0.1);
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.3);
+        };
     }
 
     setupEventListeners() {
@@ -82,6 +110,7 @@ class ChatApp {
         authManager.logout();
         this.hiddenMessages.clear();
         localStorage.removeItem(HIDDEN_MESSAGES_KEY);
+        this.isFirstLoad = true;
         this.showAuth();
     }
 
@@ -134,20 +163,60 @@ class ChatApp {
                 if (change.type === 'added') {
                     const messageData = change.doc.data();
                     const messageId = change.doc.id;
+                    const user = authManager.getCurrentUser();
                     
                     if (!this.hiddenMessages.has(messageId)) {
                         this.displayMessage({
                             id: messageId,
                             ...messageData
                         });
+                        
+                        // Воспроизводим звук ТОЛЬКО для чужих сообщений и НЕ при первой загрузке
+                        if (!this.isFirstLoad && messageData.userId !== user.id) {
+                            this.playNotificationSound();
+                        }
                     }
                 }
             });
+            
+            // После первой загрузки отключаем флаг
+            if (this.isFirstLoad) {
+                this.isFirstLoad = false;
+            }
             
             this.scrollToBottom();
         }, (error) => {
             console.error('Ошибка получения сообщений:', error);
         });
+    }
+
+    // Воспроизведение звука с вибрацией
+    playNotificationSound() {
+        try {
+            // Звук
+            this.notificationSound();
+            
+            // Вибрация на Android (короткая)
+            if ('vibrate' in navigator) {
+                navigator.vibrate(200); // 200ms вибрация
+            }
+            
+            // Можно также показать системное уведомление (если разрешено)
+            this.showNotification();
+        } catch (error) {
+            console.error('Ошибка воспроизведения звука:', error);
+        }
+    }
+
+    // Показ системного уведомления
+    async showNotification() {
+        if ('Notification' in window && Notification.permission === 'granted') {
+            // Уведомление уже разрешено - показываем
+            // (будет работать только если приложение в фоне)
+        } else if ('Notification' in window && Notification.permission === 'default') {
+            // Запрашиваем разрешение один раз
+            await Notification.requestPermission();
+        }
     }
 
     displayMessage(message) {
