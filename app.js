@@ -23,6 +23,8 @@ class ChatApp {
         this.loginBtn = document.getElementById('login-btn');
         this.logoutBtn = document.getElementById('logout-btn');
         this.userNameDisplay = document.getElementById('user-name');
+        this.notificationBanner = document.getElementById('notification-banner');
+        this.enableNotificationsBtn = document.getElementById('enable-notifications-btn');
         
         this.unsubscribe = null;
         this.hiddenMessages = new Set(this.loadHiddenMessages());
@@ -36,15 +38,45 @@ class ChatApp {
         this.setupEventListeners();
         this.checkAuth();
         this.setupPWA();
-        this.requestNotificationPermission();
     }
 
-    // Запрос разрешения на уведомления при запуске
+    // Проверка и показ баннера для запроса уведомлений
+    checkNotificationPermission() {
+        if ('Notification' in window) {
+            if (Notification.permission === 'default') {
+                // Показываем баннер
+                this.notificationBanner.classList.remove('d-none');
+            } else if (Notification.permission === 'denied') {
+                // Уведомления заблокированы - показываем инструкцию
+                this.notificationBanner.classList.remove('d-none');
+                this.notificationBanner.querySelector('.alert').innerHTML = `
+                    <strong>⚠️ Уведомления заблокированы!</strong><br>
+                    Разрешите уведомления в настройках браузера/телефона для получения звука когда приложение закрыто.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+            }
+        }
+    }
+
+    // Запрос разрешения на уведомления
     async requestNotificationPermission() {
         if ('Notification' in window && Notification.permission === 'default') {
-            const permission = await Notification.requestPermission();
-            if (permission === 'granted') {
-                console.log('Уведомления разрешены');
+            try {
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    console.log('Уведомления разрешены!');
+                    this.notificationBanner.classList.add('d-none');
+                    
+                    // Показываем тестовое уведомление
+                    new Notification('Уведомления включены! 🎉', {
+                        body: 'Теперь вы будете получать звук даже когда приложение закрыто',
+                        icon: 'icons/icon-192x192.png'
+                    });
+                } else {
+                    alert('Уведомления не разрешены. Включите их в настройках браузера.');
+                }
+            } catch (error) {
+                console.error('Ошибка запроса уведомлений:', error);
             }
         }
     }
@@ -85,6 +117,11 @@ class ChatApp {
         });
 
         this.clearChatBtn.addEventListener('click', () => this.clearLocalChat());
+        
+        // Кнопка включения уведомлений
+        this.enableNotificationsBtn.addEventListener('click', () => {
+            this.requestNotificationPermission();
+        });
     }
 
     checkAuth() {
@@ -135,6 +172,9 @@ class ChatApp {
         
         const user = authManager.getCurrentUser();
         this.userNameDisplay.textContent = user.name;
+        
+        // Проверяем разрешение на уведомления
+        this.checkNotificationPermission();
         
         this.listenToMessages();
         this.messageInput.focus();
@@ -223,13 +263,14 @@ class ChatApp {
     showSystemNotification(messageData) {
         if ('Notification' in window && Notification.permission === 'granted') {
             // Создаём уведомление
-            const notification = new Notification('Новое сообщение от ' + messageData.userName, {
+            const notification = new Notification('💬 ' + messageData.userName, {
                 body: messageData.text,
                 icon: 'icons/icon-192x192.png',
                 badge: 'icons/icon-192x192.png',
-                tag: 'chat-message', // Заменяет старое уведомление новым
+                tag: 'chat-message',
                 requireInteraction: false,
-                vibrate: [200, 150, 200, 150, 200]
+                vibrate: [200, 150, 200, 150, 200],
+                silent: false // Звук системного уведомления
             });
 
             // При клике на уведомление - открыть/показать приложение
@@ -238,8 +279,8 @@ class ChatApp {
                 notification.close();
             };
 
-            // Автоматически закрыть через 5 секунд
-            setTimeout(() => notification.close(), 5000);
+            // Автоматически закрыть через 7 секунд
+            setTimeout(() => notification.close(), 7000);
         }
     }
 

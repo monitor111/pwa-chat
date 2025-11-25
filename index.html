@@ -44,6 +44,16 @@
             </div>
         </div>
 
+        <!-- Уведомление о разрешении на уведомления -->
+        <div id="notification-banner" class="d-none">
+            <div class="alert alert-warning alert-dismissible fade show m-3" role="alert">
+                <strong>🔔 Включите уведомления!</strong><br>
+                Чтобы получать звук когда приложение закрыто, разрешите уведомления.
+                <button id="enable-notifications-btn" class="btn btn-sm btn-warning mt-2 w-100">Включить уведомления</button>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        </div>
+
         <div class="row chat-row">
             <div class="col-12">
                 <div id="messages-container" class="messages-container p-3"></div>
