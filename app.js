@@ -14,7 +14,6 @@ const HIDDEN_MESSAGES_KEY = 'pwa_chat_hidden_messages';
 
 class ChatApp {
     constructor() {
-        // Элементы DOM
         this.messagesContainer = document.getElementById('messages-container');
         this.messageInput = document.getElementById('message-input');
         this.sendBtn = document.getElementById('send-btn');
@@ -35,10 +34,7 @@ class ChatApp {
 
         this.messaging = getMessaging();
         this.fcmToken = null;
-
-        // Получаем выбранного пользователя для чата
-        this.targetUser = JSON.parse(localStorage.getItem('pwa_chat_targetUser'));
-
+        
         this.init();
     }
 
@@ -95,6 +91,7 @@ class ChatApp {
                         body: 'Теперь вы будете получать звук даже когда приложение закрыто',
                         icon: 'icons/icon-192x192.png'
                     });
+                    // После разрешения - получаем токен FCM
                     await this.setupFCM();
                 } else {
                     alert('Уведомления не разрешены. Включите их в настройках браузера.');
@@ -138,28 +135,12 @@ class ChatApp {
     }
 
     checkAuth() {
-    if (!authManager.isLoggedIn()) {
-        // Если не авторизован — показываем форму логина
-        this.showAuth();
-        return;
+        if (authManager.isLoggedIn()) {
+            this.showChat();
+        } else {
+            this.showAuth();
+        }
     }
-
-    // Если пользователь авторизован, но не выбран собеседник
-    if (!this.targetUser) {
-        // Показываем уведомление и остаёмся на странице логина/выбора пользователя
-        this.authContainer.classList.remove('d-none');
-        this.chatContainer.classList.add('d-none');
-        this.usernameInput.value = authManager.getCurrentUser().name;
-        this.usernameInput.disabled = true;
-        alert('Пожалуйста, выберите пользователя для чата на странице "Выбор пользователя".');
-        return;
-    }
-
-    // Если авторизован и выбран собеседник — открываем чат
-    this.showChat();
-}
-
-
 
     handleLogin() {
         const username = this.usernameInput.value.trim();
@@ -169,7 +150,7 @@ class ChatApp {
         }
         try {
             authManager.login(username);
-            window.location.href = 'users.html'; // После логина идём выбирать пользователя
+            this.showChat();
         } catch (error) {
             alert(error.message);
         }
@@ -181,8 +162,6 @@ class ChatApp {
         this.hiddenMessages.clear();
         localStorage.removeItem(HIDDEN_MESSAGES_KEY);
         this.isFirstLoad = true;
-        this.targetUser = null;
-        localStorage.removeItem('pwa_chat_targetUser');
         this.showAuth();
     }
 
@@ -212,7 +191,6 @@ class ChatApp {
                 text: text,
                 userId: user.id,
                 userName: user.name,
-                targetUserId: this.targetUser.id,
                 timestamp: serverTimestamp()
             });
             this.messageInput.value = '';
@@ -231,16 +209,10 @@ class ChatApp {
                     const messageData = change.doc.data();
                     const messageId = change.doc.id;
                     const user = authManager.getCurrentUser();
-
-                    // Фильтр сообщений между двумя пользователями
-                    if ((messageData.userId === user.id && messageData.targetUserId === this.targetUser.id) ||
-                        (messageData.userId === this.targetUser.id && messageData.targetUserId === user.id)) {
-
-                        if (!this.hiddenMessages.has(messageId)) {
-                            this.displayMessage({ id: messageId, ...messageData });
-                            if (!this.isFirstLoad && messageData.userId !== user.id) {
-                                this.playNotificationSound(messageData);
-                            }
+                    if (!this.hiddenMessages.has(messageId)) {
+                        this.displayMessage({ id: messageId, ...messageData });
+                        if (!this.isFirstLoad && messageData.userId !== user.id) {
+                            this.playNotificationSound(messageData);
                         }
                     }
                 }
@@ -365,3 +337,4 @@ class ChatApp {
 document.addEventListener('DOMContentLoaded', () => {
     new ChatApp();
 });
+
