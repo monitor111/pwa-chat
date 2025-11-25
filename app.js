@@ -138,19 +138,28 @@ class ChatApp {
     }
 
     checkAuth() {
-        if (!authManager.isLoggedIn()) {
-            this.showAuth();
-            return;
-        }
-
-        // Если нет выбранного пользователя для чата
-        if (!this.targetUser) {
-            window.location.href = 'users.html';
-            return;
-        }
-
-        this.showChat();
+    if (!authManager.isLoggedIn()) {
+        // Если не авторизован — показываем форму логина
+        this.showAuth();
+        return;
     }
+
+    // Если пользователь авторизован, но не выбран собеседник
+    if (!this.targetUser) {
+        // Показываем уведомление и остаёмся на странице логина/выбора пользователя
+        this.authContainer.classList.remove('d-none');
+        this.chatContainer.classList.add('d-none');
+        this.usernameInput.value = authManager.getCurrentUser().name;
+        this.usernameInput.disabled = true;
+        alert('Пожалуйста, выберите пользователя для чата на странице "Выбор пользователя".');
+        return;
+    }
+
+    // Если авторизован и выбран собеседник — открываем чат
+    this.showChat();
+}
+
+
 
     handleLogin() {
         const username = this.usernameInput.value.trim();
