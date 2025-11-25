@@ -191,22 +191,25 @@ class ChatApp {
     }
 
     // Воспроизведение звука с вибрацией
-    playNotificationSound() {
-        try {
-            // Звук
-            this.notificationSound();
-            
-            // Вибрация на Android (короткая)
-            if ('vibrate' in navigator) {
-                navigator.vibrate(200); // 200ms вибрация
-            }
-            
-            // Можно также показать системное уведомление (если разрешено)
-            this.showNotification();
-        } catch (error) {
-            console.error('Ошибка воспроизведения звука:', error);
+playNotificationSound() {
+    try {
+        // 3 звука подряд
+        this.notificationSound();
+        setTimeout(() => this.notificationSound(), 200);
+        setTimeout(() => this.notificationSound(), 400);
+
+        // Вибрация на Android
+        if ('vibrate' in navigator) {
+            navigator.vibrate([150, 100, 150, 100, 150]); 
         }
+
+        // Уведомление (если разрешено)
+        this.showNotification();
+
+    } catch (error) {
+        console.error('Ошибка воспроизведения звука:', error);
     }
+}
 
     // Показ системного уведомления
     async showNotification() {
