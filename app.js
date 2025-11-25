@@ -26,10 +26,8 @@ class ChatApp {
         
         this.unsubscribe = null;
         this.hiddenMessages = new Set(this.loadHiddenMessages());
-        this.isFirstLoad = true; // Флаг для первой загрузки
-        
-        // Создаём звук уведомления
-        this.notificationSound = this.createNotificationSound();
+        this.isFirstLoad = true;
+        this.audioContext = null;
         
         this.init();
     }
@@ -38,30 +36,40 @@ class ChatApp {
         this.setupEventListeners();
         this.checkAuth();
         this.setupPWA();
+        this.requestNotificationPermission();
     }
 
-    // Создание звука уведомления
-    createNotificationSound() {
-        // Создаём AudioContext для генерации звука
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    // Запрос разрешения на уведомления при запуске
+    async requestNotificationPermission() {
+        if ('Notification' in window && Notification.permission === 'default') {
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+                console.log('Уведомления разрешены');
+            }
+        }
+    }
+
+    // Создание одного звука
+    playBeep() {
+        if (!this.audioContext) {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
         
-        return () => {
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            // Настройки звука (приятный "дзинь")
-            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(600, audioContext.currentTime + 0.1);
-            
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-            
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.3);
-        };
+        const oscillator = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+        
+        // Настройки звука
+        oscillator.frequency.setValueAtTime(800, this.audioContext.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(600, this.audioContext.currentTime + 0.15);
+        
+        gainNode.gain.setValueAtTime(0.4, this.audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.2);
+        
+        oscillator.start(this.audioContext.currentTime);
+        oscillator.stop(this.audioContext.currentTime + 0.2);
     }
 
     setupEventListeners() {
@@ -171,9 +179,9 @@ class ChatApp {
                             ...messageData
                         });
                         
-                        // Воспроизводим звук ТОЛЬКО для чужих сообщений и НЕ при первой загрузке
+                        // Звук и уведомление ТОЛЬКО для чужих сообщений и НЕ при первой загрузке
                         if (!this.isFirstLoad && messageData.userId !== user.id) {
-                            this.playNotificationSound();
+                            this.playNotificationSound(messageData);
                         }
                     }
                 }
@@ -190,35 +198,48 @@ class ChatApp {
         });
     }
 
-    // Воспроизведение звука с вибрацией
-playNotificationSound() {
-    try {
-        // 3 звука подряд
-        this.notificationSound();
-        setTimeout(() => this.notificationSound(), 200);
-        setTimeout(() => this.notificationSound(), 400);
+    // Воспроизведение 3 звуков подряд + вибрация + уведомление
+    playNotificationSound(messageData) {
+        try {
+            // 3 звука с паузами
+            this.playBeep();
+            setTimeout(() => this.playBeep(), 300);
+            setTimeout(() => this.playBeep(), 600);
 
-        // Вибрация на Android
-        if ('vibrate' in navigator) {
-            navigator.vibrate([150, 100, 150, 100, 150]); 
+            // Вибрация 3 раза (работает на Android)
+            if ('vibrate' in navigator) {
+                navigator.vibrate([200, 150, 200, 150, 200]);
+            }
+
+            // Показываем системное уведомление
+            this.showSystemNotification(messageData);
+
+        } catch (error) {
+            console.error('Ошибка воспроизведения звука:', error);
         }
-
-        // Уведомление (если разрешено)
-        this.showNotification();
-
-    } catch (error) {
-        console.error('Ошибка воспроизведения звука:', error);
     }
-}
 
-    // Показ системного уведомления
-    async showNotification() {
+    // Показ системного уведомления (работает даже когда приложение в фоне)
+    showSystemNotification(messageData) {
         if ('Notification' in window && Notification.permission === 'granted') {
-            // Уведомление уже разрешено - показываем
-            // (будет работать только если приложение в фоне)
-        } else if ('Notification' in window && Notification.permission === 'default') {
-            // Запрашиваем разрешение один раз
-            await Notification.requestPermission();
+            // Создаём уведомление
+            const notification = new Notification('Новое сообщение от ' + messageData.userName, {
+                body: messageData.text,
+                icon: 'icons/icon-192x192.png',
+                badge: 'icons/icon-192x192.png',
+                tag: 'chat-message', // Заменяет старое уведомление новым
+                requireInteraction: false,
+                vibrate: [200, 150, 200, 150, 200]
+            });
+
+            // При клике на уведомление - открыть/показать приложение
+            notification.onclick = function() {
+                window.focus();
+                notification.close();
+            };
+
+            // Автоматически закрыть через 5 секунд
+            setTimeout(() => notification.close(), 5000);
         }
     }
 
