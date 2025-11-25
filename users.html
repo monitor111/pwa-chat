@@ -18,7 +18,7 @@
                     <div class="card-body">
                         <h2 class="card-title text-center mb-4">Выберите пользователя для чата</h2>
                         <ul id="users-list" class="list-group">
-                            <!-- Сюда будут подставляться пользователи -->
+                            <!-- Сюда будет подставляться текущий пользователь -->
                         </ul>
                         <button id="logout-btn" class="btn btn-outline-danger w-100 mt-3">Выйти</button>
                     </div>
@@ -33,45 +33,37 @@
         const usersList = document.getElementById('users-list');
         const logoutBtn = document.getElementById('logout-btn');
 
-        // Проверяем, авторизован ли пользователь
-        if (!authManager.isLoggedIn()) {
+        // Получаем текущего пользователя
+        const currentUser = authManager.getCurrentUser();
+
+        // Если пользователя нет (не авторизован), возвращаем на авторизацию
+        if (!currentUser) {
             window.location.href = 'index.html';
         }
 
-        async function loadUsers() {
-            const users = await authManager.getAllUsers();
-            usersList.innerHTML = '';
+        // Просто показываем текущего пользователя
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+        li.textContent = currentUser.name;
 
-            if (users.length === 0) {
-                usersList.innerHTML = '<li class="list-group-item text-center">Пока нет других пользователей онлайн</li>';
-                return;
-            }
-
-            users.forEach(user => {
-                const li = document.createElement('li');
-                li.className = 'list-group-item d-flex justify-content-between align-items-center';
-                li.textContent = user.name;
-
-                const startBtn = document.createElement('button');
-                startBtn.className = 'btn btn-primary btn-sm';
-                startBtn.textContent = 'Начать чат';
-                startBtn.addEventListener('click', () => {
-                    // Сохраняем выбранного пользователя в localStorage и переходим на index.html
-                    localStorage.setItem('pwa_chat_targetUser', JSON.stringify(user));
-                    window.location.href = 'index.html';
-                });
-
-                li.appendChild(startBtn);
-                usersList.appendChild(li);
-            });
-        }
-
-        logoutBtn.addEventListener('click', async () => {
-            await authManager.logout();
+        const startBtn = document.createElement('button');
+        startBtn.className = 'btn btn-primary btn-sm';
+        startBtn.textContent = 'Начать чат';
+        startBtn.addEventListener('click', () => {
+            // Сохраняем выбранного пользователя в localStorage (пока себя)
+            localStorage.setItem('pwa_chat_targetUser', JSON.stringify(currentUser));
             window.location.href = 'index.html';
         });
 
-        loadUsers();
+        li.appendChild(startBtn);
+        usersList.appendChild(li);
+
+        // Кнопка выхода
+        logoutBtn.addEventListener('click', () => {
+            localStorage.removeItem('pwa_chat_user');
+            localStorage.removeItem('pwa_chat_targetUser');
+            window.location.href = 'index.html';
+        });
     </script>
 </body>
 </html>
