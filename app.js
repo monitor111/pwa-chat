@@ -8,6 +8,7 @@ import {
     onSnapshot,
     serverTimestamp 
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js';
 
 const HIDDEN_MESSAGES_KEY = 'pwa_chat_hidden_messages';
 
@@ -30,24 +31,45 @@ class ChatApp {
         this.hiddenMessages = new Set(this.loadHiddenMessages());
         this.isFirstLoad = true;
         this.audioContext = null;
+
+        this.messaging = getMessaging();
+        this.fcmToken = null;
         
         this.init();
     }
 
-    init() {
+    async init() {
         this.setupEventListeners();
         this.checkAuth();
         this.setupPWA();
+        await this.setupFCM();
     }
 
-    // Проверка и показ баннера для запроса уведомлений
+    // FCM: запрос токена и обработка сообщений на переднем плане
+    async setupFCM() {
+        try {
+            const token = await getToken(this.messaging, { vapidKey: 'BPqRYsN3C1UsOhkysflGXTzQR6ZviYRjBKpuNDw4k1wgckjFeEE4uVQiDJsnlmLyDFrOUAaXIBsnAGBCvf8ffEA' });
+            if (token) {
+                console.log('FCM токен получен:', token);
+                this.fcmToken = token;
+            } else {
+                console.warn('FCM токен не получен. Разрешите уведомления.');
+            }
+
+            onMessage(this.messaging, (payload) => {
+                console.log('Сообщение на переднем плане:', payload);
+                this.playNotificationSound({ userName: payload.notification.title, text: payload.notification.body });
+            });
+        } catch (error) {
+            console.error('Ошибка FCM:', error);
+        }
+    }
+
     checkNotificationPermission() {
         if ('Notification' in window) {
             if (Notification.permission === 'default') {
-                // Показываем баннер
                 this.notificationBanner.classList.remove('d-none');
             } else if (Notification.permission === 'denied') {
-                // Уведомления заблокированы - показываем инструкцию
                 this.notificationBanner.classList.remove('d-none');
                 this.notificationBanner.querySelector('.alert').innerHTML = `
                     <strong>⚠️ Уведомления заблокированы!</strong><br>
@@ -58,7 +80,6 @@ class ChatApp {
         }
     }
 
-    // Запрос разрешения на уведомления
     async requestNotificationPermission() {
         if ('Notification' in window && Notification.permission === 'default') {
             try {
@@ -66,12 +87,12 @@ class ChatApp {
                 if (permission === 'granted') {
                     console.log('Уведомления разрешены!');
                     this.notificationBanner.classList.add('d-none');
-                    
-                    // Показываем тестовое уведомление
                     new Notification('Уведомления включены! 🎉', {
                         body: 'Теперь вы будете получать звук даже когда приложение закрыто',
                         icon: 'icons/icon-192x192.png'
                     });
+                    // После разрешения - получаем токен FCM
+                    await this.setupFCM();
                 } else {
                     alert('Уведомления не разрешены. Включите их в настройках браузера.');
                 }
@@ -81,25 +102,18 @@ class ChatApp {
         }
     }
 
-    // Создание одного звука
     playBeep() {
         if (!this.audioContext) {
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
-        
         const oscillator = this.audioContext.createOscillator();
         const gainNode = this.audioContext.createGain();
-        
         oscillator.connect(gainNode);
         gainNode.connect(this.audioContext.destination);
-        
-        // Настройки звука
         oscillator.frequency.setValueAtTime(800, this.audioContext.currentTime);
         oscillator.frequency.exponentialRampToValueAtTime(600, this.audioContext.currentTime + 0.15);
-        
         gainNode.gain.setValueAtTime(0.4, this.audioContext.currentTime);
         gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.2);
-        
         oscillator.start(this.audioContext.currentTime);
         oscillator.stop(this.audioContext.currentTime + 0.2);
     }
@@ -117,11 +131,7 @@ class ChatApp {
         });
 
         this.clearChatBtn.addEventListener('click', () => this.clearLocalChat());
-        
-        // Кнопка включения уведомлений
-        this.enableNotificationsBtn.addEventListener('click', () => {
-            this.requestNotificationPermission();
-        });
+        this.enableNotificationsBtn.addEventListener('click', () => this.requestNotificationPermission());
     }
 
     checkAuth() {
@@ -134,12 +144,10 @@ class ChatApp {
 
     handleLogin() {
         const username = this.usernameInput.value.trim();
-        
         if (!username) {
             alert('Пожалуйста, введите ваше имя');
             return;
         }
-
         try {
             authManager.login(username);
             this.showChat();
@@ -149,9 +157,7 @@ class ChatApp {
     }
 
     handleLogout() {
-        if (this.unsubscribe) {
-            this.unsubscribe();
-        }
+        if (this.unsubscribe) this.unsubscribe();
         authManager.logout();
         this.hiddenMessages.clear();
         localStorage.removeItem(HIDDEN_MESSAGES_KEY);
@@ -169,24 +175,17 @@ class ChatApp {
     showChat() {
         this.authContainer.classList.add('d-none');
         this.chatContainer.classList.remove('d-none');
-        
         const user = authManager.getCurrentUser();
         this.userNameDisplay.textContent = user.name;
-        
-        // Проверяем разрешение на уведомления
         this.checkNotificationPermission();
-        
         this.listenToMessages();
         this.messageInput.focus();
     }
 
     async sendMessage() {
         const text = this.messageInput.value.trim();
-        
         if (!text) return;
-
         const user = authManager.getCurrentUser();
-        
         try {
             await addDoc(collection(db, 'messages'), {
                 text: text,
@@ -194,7 +193,6 @@ class ChatApp {
                 userName: user.name,
                 timestamp: serverTimestamp()
             });
-
             this.messageInput.value = '';
             this.messageInput.focus();
         } catch (error) {
@@ -205,64 +203,41 @@ class ChatApp {
 
     listenToMessages() {
         const q = query(collection(db, 'messages'), orderBy('timestamp', 'asc'));
-        
         this.unsubscribe = onSnapshot(q, (snapshot) => {
             snapshot.docChanges().forEach((change) => {
                 if (change.type === 'added') {
                     const messageData = change.doc.data();
                     const messageId = change.doc.id;
                     const user = authManager.getCurrentUser();
-                    
                     if (!this.hiddenMessages.has(messageId)) {
-                        this.displayMessage({
-                            id: messageId,
-                            ...messageData
-                        });
-                        
-                        // Звук и уведомление ТОЛЬКО для чужих сообщений и НЕ при первой загрузке
+                        this.displayMessage({ id: messageId, ...messageData });
                         if (!this.isFirstLoad && messageData.userId !== user.id) {
                             this.playNotificationSound(messageData);
                         }
                     }
                 }
             });
-            
-            // После первой загрузки отключаем флаг
-            if (this.isFirstLoad) {
-                this.isFirstLoad = false;
-            }
-            
+            if (this.isFirstLoad) this.isFirstLoad = false;
             this.scrollToBottom();
         }, (error) => {
             console.error('Ошибка получения сообщений:', error);
         });
     }
 
-    // Воспроизведение 3 звуков подряд + вибрация + уведомление
     playNotificationSound(messageData) {
         try {
-            // 3 звука с паузами
             this.playBeep();
             setTimeout(() => this.playBeep(), 300);
             setTimeout(() => this.playBeep(), 600);
-
-            // Вибрация 3 раза (работает на Android)
-            if ('vibrate' in navigator) {
-                navigator.vibrate([200, 150, 200, 150, 200]);
-            }
-
-            // Показываем системное уведомление
+            if ('vibrate' in navigator) navigator.vibrate([200, 150, 200, 150, 200]);
             this.showSystemNotification(messageData);
-
         } catch (error) {
             console.error('Ошибка воспроизведения звука:', error);
         }
     }
 
-    // Показ системного уведомления (работает даже когда приложение в фоне)
     showSystemNotification(messageData) {
         if ('Notification' in window && Notification.permission === 'granted') {
-            // Создаём уведомление
             const notification = new Notification('💬 ' + messageData.userName, {
                 body: messageData.text,
                 icon: 'icons/icon-192x192.png',
@@ -270,16 +245,9 @@ class ChatApp {
                 tag: 'chat-message',
                 requireInteraction: false,
                 vibrate: [200, 150, 200, 150, 200],
-                silent: false // Звук системного уведомления
+                silent: false
             });
-
-            // При клике на уведомление - открыть/показать приложение
-            notification.onclick = function() {
-                window.focus();
-                notification.close();
-            };
-
-            // Автоматически закрыть через 7 секунд
+            notification.onclick = () => { window.focus(); notification.close(); };
             setTimeout(() => notification.close(), 7000);
         }
     }
@@ -287,51 +255,41 @@ class ChatApp {
     displayMessage(message) {
         const user = authManager.getCurrentUser();
         const isOwnMessage = message.userId === user.id;
-        
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${isOwnMessage ? 'own' : 'other'}`;
         messageDiv.dataset.messageId = message.id;
-        
+
         if (!isOwnMessage) {
             const senderDiv = document.createElement('div');
             senderDiv.className = 'message-sender';
             senderDiv.textContent = message.userName;
             messageDiv.appendChild(senderDiv);
         }
-        
+
         const textDiv = document.createElement('div');
         textDiv.className = 'message-text';
         textDiv.textContent = message.text;
         messageDiv.appendChild(textDiv);
-        
+
         if (message.timestamp) {
             const timeDiv = document.createElement('div');
             timeDiv.className = 'message-time';
             const date = message.timestamp.toDate();
-            timeDiv.textContent = date.toLocaleTimeString('ru-RU', { 
-                hour: '2-digit', 
-                minute: '2-digit' 
-            });
+            timeDiv.textContent = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
             messageDiv.appendChild(timeDiv);
         }
-        
+
         this.messagesContainer.appendChild(messageDiv);
     }
 
     clearLocalChat() {
-        if (!confirm('Очистить историю чата на этом устройстве? (Другие пользователи по-прежнему увидят все сообщения)')) {
-            return;
-        }
-
+        if (!confirm('Очистить историю чата на этом устройстве?')) return;
         const messages = this.messagesContainer.querySelectorAll('.message');
         messages.forEach(msg => {
             const messageId = msg.dataset.messageId;
-            if (messageId) {
-                this.hiddenMessages.add(messageId);
-            }
+            if (messageId) this.hiddenMessages.add(messageId);
             msg.remove();
         });
-
         this.saveHiddenMessages();
     }
 
@@ -379,3 +337,4 @@ class ChatApp {
 document.addEventListener('DOMContentLoaded', () => {
     new ChatApp();
 });
+
