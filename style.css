@@ -10,14 +10,15 @@ body {
   overflow: hidden;
 }
 
+/* Фикс для мобильных — корректная высота вместо 100vh */
 #app {
-  height: 100vh;
+  height: calc(100vh - env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
 }
 
 #main {
-  height: 100vh;
+  height: calc(100vh - env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -81,6 +82,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  -webkit-overflow-scrolling: touch; /* плавный скролл */
 }
 
 /* Сообщения */
@@ -124,6 +126,7 @@ body {
   background: white;
   border-top: 1px solid #dee2e6;
   padding: 0.75rem;
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom)); /* ← фикс */
 }
 
 .composer-actions {
@@ -225,15 +228,6 @@ body {
 
   #backBtn {
     display: none !important;
-  }
-}
-
-/* Мобильные — фикс поля ввода */
-@media (max-width: 767px) {
-  /* Уменьшаем область сообщений на мобильных,
-     чтобы композер НЕ уезжал вниз под системные кнопки */
-  .messages-container {
-    height: calc(100vh - 230px); /* ← вот эта строка фиксирует вашу проблему */
   }
 }
 
