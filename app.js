@@ -2,8 +2,8 @@
 import { auth, db, storage } from './firebase-config.js';
 import { ensureAuth, signOutUser } from './auth.js';
 import {
-  collection, doc, setDoc, getDocs, query, orderBy, onSnapshot,
-  where, serverTimestamp, addDoc, getDoc
+  collection, doc, setDoc, query, orderBy, onSnapshot,
+  serverTimestamp, addDoc
 } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
 import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-storage.js';
 
@@ -56,8 +56,13 @@ async function requestNotifications() {
 }
 
 // ------------------ Инициализация пользователя ------------------
-ensureAuth(async (user) => {
-  me = user;
+(async () => {
+  await new Promise(resolve => {
+    ensureAuth(user => {
+      me = user;
+      resolve(user);
+    });
+  });
 
   loader.style.display = 'none';
   main.style.display = '';
@@ -66,7 +71,7 @@ ensureAuth(async (user) => {
 
   startUsersListener();
   requestNotifications();
-});
+})();
 
 // ------------------ Слушатель пользователей ------------------
 function startUsersListener() {
@@ -76,7 +81,7 @@ function startUsersListener() {
     usersList.innerHTML = '';
     snap.docs.forEach(d => {
       const u = d.data();
-      if (!u.uid || u.uid === (auth.currentUser && auth.currentUser.uid)) return;
+      if (!u.uid || u.uid === me.uid) return;
       const li = document.createElement('li');
       li.className = 'list-group-item d-flex justify-content-between align-items-center';
       li.innerHTML = `<div>
@@ -105,13 +110,10 @@ saveNameBtn.addEventListener('click', async () => {
   localStorage.setItem('displayName', nm);
   meDisplay.innerText = nm;
 
-  const user = auth.currentUser;
-  if (user) {
-    try {
-      await setDoc(doc(db, 'users', user.uid), { name: nm, lastSeen: serverTimestamp(), online: true }, { merge: true });
-      alert('Имя сохранено');
-    } catch(e) { console.error(e); alert('Ошибка'); }
-  }
+  try {
+    await setDoc(doc(db, 'users', me.uid), { name: nm, lastSeen: serverTimestamp(), online: true }, { merge: true });
+    alert('Имя сохранено');
+  } catch(e) { console.error(e); alert('Ошибка'); }
 });
 
 // ------------------ Выход ------------------
@@ -124,7 +126,7 @@ signoutBtn.addEventListener('click', async () => {
 // ------------------ Открыть чат ------------------
 async function openChat(peerUid, peerName) {
   currentPeer = { uid: peerUid, name: peerName };
-  currentChatId = uidPair(auth.currentUser.uid, peerUid);
+  currentChatId = uidPair(me.uid, peerUid);
   chatWith.innerText = peerName;
   chatHeader.classList.remove('d-none');
   composer.classList.remove('d-none');
@@ -138,7 +140,7 @@ async function openChat(peerUid, peerName) {
       const d = change.doc;
       if (change.type === 'added') {
         appendMessageToUI(d.id, d.data());
-        if (d.data().from !== auth.currentUser.uid) {
+        if (d.data().from !== me.uid) {
           if (!isChatActiveWith(peerUid)) {
             showInAppNotification(peerName, d.data());
             playNotify();
@@ -185,7 +187,7 @@ async function sendMessage(file=null) {
   }
   try {
     await addDoc(messagesRef, {
-      from: auth.currentUser.uid,
+      from: me.uid,
       to: currentPeer.uid,
       text: text || null,
       image: imageUrl,
@@ -202,10 +204,10 @@ async function sendMessage(file=null) {
 function appendMessageToUI(id, data) {
   if (document.querySelector(`[data-id="${id}"]`)) return;
   const div = document.createElement('div');
-  div.className = 'msg ' + ((data.from === auth.currentUser.uid) ? 'me' : 'them');
+  div.className = 'msg ' + ((data.from === me.uid) ? 'me' : 'them');
   div.dataset.id = id;
   const time = data.timestamp ? new Date(data.timestamp.seconds*1000).toLocaleTimeString() : '';
-  const who = (data.from === auth.currentUser.uid) ? 'Вы' : escapeHtml(currentPeer ? currentPeer.name : '');
+  const who = (data.from === me.uid) ? 'Вы' : escapeHtml(currentPeer ? currentPeer.name : '');
   const textHtml = data.text ? `<div>${escapeHtml(data.text)}</div>` : '';
   const imageHtml = data.image ? `<div><img src="${escapeHtml(data.image)}" alt="img"></div>` : '';
   div.innerHTML = `<div class="small text-muted">${who} · ${time}</div>${textHtml}${imageHtml}`;
