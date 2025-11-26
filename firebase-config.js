@@ -9,14 +9,15 @@ import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.13.1/firebas
 
 // Конфигурация Firebase для твоего проекта
 export const firebaseConfig = {
-  apiKey: "AIzaSyCgtqA5RLLZ-krtKyT9JZyL5Fe5PokHJco",
+  apiKey: "AIzaSyCgtqA5RLLZ-krtKyT9JZyL5Fe5PokHJco", // новый ключ
   authDomain: "pwa-chat-2e68d.firebaseapp.com",
   projectId: "pwa-chat-2e68d",
-  storageBucket: "pwa-chat-2e68d.appspot.com",
+  storageBucket: "pwa-chat-2e68d.firebasestorage.app",
   messagingSenderId: "215886265728",
-  appId: "1:215886265728:web:3eb6a908ca8d4a00c29565",
-  measurementId: "G-RCFPNRCPTS"
+  appId: "1:215886265728:web:241db59ba5cb073bc29565", // новый App ID
+  measurementId: "G-KXJ53JW7BL" // новый measurementId
 };
+
 
 
 // Инициализация Firebase
