@@ -6,8 +6,7 @@ const FILES = [
   './app.js',
   './auth.js',
   './firebase-config.js',
-  './manifest.json',
-  './notify.mp3'
+  './manifest.json'
 ];
 
 self.addEventListener('install', (e) => {
