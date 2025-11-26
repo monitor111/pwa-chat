@@ -237,7 +237,255 @@ body {
 
   .app-header .btn {
     font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #f8f9fa;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overflow: hidden;
+}
+
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#main {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Шапка приложения */
+.app-header {
+  background: #0d6efd;
+  color: white;
+  padding: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Панель пользователей */
+.users-panel {
+  flex: 1;
+  overflow-y: auto;
+  background: white;
+  display: block;
+}
+
+/* ----------- ЧАТ ПАНЕЛЬ (исправлено) ----------- */
+.chat-panel {
+  flex: 1;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  background: white;
+  height: 100%; /* добавлено */
+}
+
+.chat-panel.active {
+  display: flex;
+}
+
+.users-panel.hidden {
+  display: none;
+}
+
+/* Заголовок чата */
+.chat-header {
+  background: #0d6efd;
+  color: white;
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-shrink: 0;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* ----------- КОНТЕЙНЕР СООБЩЕНИЙ (главный фикс) ----------- */
+.messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  background: #e9ecef;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-bottom: 80px; /* чтобы текст не прилипал к низу */
+}
+
+/* Стили сообщений */
+.msg {
+  padding: 0.75rem;
+  border-radius: 1rem;
+  max-width: 85%;
+  word-wrap: break-word;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.msg.me {
+  background: #0d6efd;
+  color: white;
+  align-self: flex-end;
+  border-bottom-right-radius: 0.25rem;
+}
+
+.msg.them {
+  background: white;
+  align-self: flex-start;
+  border-bottom-left-radius: 0.25rem;
+}
+
+.msg img {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 0.5rem;
+  display: block;
+  margin-top: 0.5rem;
+}
+
+.msg .small {
+  opacity: 0.8;
+  font-size: 0.75rem;
+}
+
+/* ----------- КОМПОЗЕР – ПОЛЕ ВВОДА (фикс) ----------- */
+.composer {
+  flex-shrink: 0;
+  background: white;
+  border-top: 1px solid #dee2e6;
+  padding: 0.75rem;
+}
+
+.composer-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.composer-input {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.composer-input input {
+  flex: 1;
+  border-radius: 2rem;
+  padding: 0.75rem 1rem;
+}
+
+.composer-input button {
+  border-radius: 50%;
+  width: 45px;
+  height: 45px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+}
+
+/* Список пользователей */
+#usersList {
+  border: none;
+}
+
+.list-group-item {
+  border: none;
+  border-bottom: 1px solid #f0f0f0;
+  padding: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.list-group-item:hover {
+  background: #f8f9fa;
+}
+
+.list-group-item .status {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 0.5rem;
+}
+
+.status.online {
+  background: #28a745;
+  box-shadow: 0 0 4px #28a745;
+}
+
+.status.offline {
+  background: #6c757d;
+}
+
+/* ----------- Десктоп ----------- */
+@media (min-width: 768px) {
+  #main {
+    flex-direction: row;
+  }
+
+  .app-header {
+    display: none;
+  }
+
+  .users-panel {
+    width: 350px;
+    border-right: 1px solid #dee2e6;
+    display: block !important;
+  }
+
+  .chat-panel {
+    display: flex;
+    flex: 1;
+  }
+
+  .chat-header {
+    background: #f8f9fa;
+    color: #212529;
+    border-bottom: 1px solid #dee2e6;
+  }
+
+  .chat-header button {
+    color: #0d6efd;
+  }
+
+  .msg {
+    max-width: 70%;
+  }
+
+  #backBtn {
+    display: none !important;
+  }
+}
+
+/* ----------- Маленькие экраны ----------- */
+@media (max-width: 360px) {
+  .app-header h5 {
+    font-size: 1rem;
+  }
+
+  .app-header .btn {
+    font-size: 0.75rem;
     padding: 0.25rem 0.5rem;
+  }
+
+  .msg {
+    max-width: 90%;
+    padding: 0.5rem;
+  }
+}
+
   }
 
   .msg {
