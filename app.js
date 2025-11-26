@@ -1,6 +1,6 @@
 // app.js
 import { auth, db, storage } from './firebase-config.js';
-import { ensureAuth, signOutUser } from './auth.js';
+import { authManager } from './auth.js';
 import {
   collection, doc, setDoc, getDocs, query, orderBy, onSnapshot,
   where, serverTimestamp, addDoc, getDoc
@@ -30,12 +30,14 @@ const notifySound = document.getElementById('notifySound');
 let me = null;
 let usersUnsub = null;
 let messagesUnsub = null;
-let currentChatId = null; // doc id для чата (сортируем uid-а)
-let currentPeer = null; // объект пользователя, с кем чат
+let currentChatId = null;
+let currentPeer = null;
 
-// Утилиты
+// ------------------ Утилиты ------------------
 function escapeHtml(str='') {
-  return String(str).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
+  return String(str).replaceAll('&','&amp;')
+    .replaceAll('<','&lt;').replaceAll('>','&gt;')
+    .replaceAll('"','&quot;').replaceAll("'",'&#39;');
 }
 
 function uidPair(a, b) {
@@ -53,22 +55,30 @@ async function requestNotifications() {
   }
 }
 
-// Подключаемся
-ensureAuth(async (user) => {
-  me = user;
+// ------------------ Инициализация пользователя ------------------
+(async () => {
+  me = authManager.getCurrentUser();
+  if (!me) {
+    // ждём пока Firebase создаст анонимного пользователя
+    const waitForUser = () => new Promise(resolve => {
+      const interval = setInterval(() => {
+        const u = authManager.getCurrentUser();
+        if (u) { clearInterval(interval); resolve(u); }
+      }, 100);
+    });
+    me = await waitForUser();
+  }
+
   loader.style.display = 'none';
   main.style.display = '';
-  meDisplay.innerText = localStorage.getItem('displayName') || ('User-' + me.uid.slice(-4));
+  meDisplay.innerText = localStorage.getItem('displayName') || me.name || ('User-' + me.id.slice(-4));
   nameInput.value = localStorage.getItem('displayName') || '';
 
-  // Начинаем слушать список пользователей
   startUsersListener();
-
-  // попросим разрешение на нотификации
   requestNotifications();
-});
+})();
 
-// Слушатель пользователей
+// ------------------ Слушатель пользователей ------------------
 function startUsersListener() {
   const usersCol = collection(db, 'users');
   if (usersUnsub) usersUnsub();
@@ -76,7 +86,7 @@ function startUsersListener() {
     usersList.innerHTML = '';
     snap.docs.forEach(d => {
       const u = d.data();
-      if (!u.uid || u.uid === (auth.currentUser && auth.currentUser.uid)) return; // не показываем себя
+      if (!u.uid || u.uid === (authManager.getCurrentUser() && authManager.getCurrentUser().id)) return;
       const li = document.createElement('li');
       li.className = 'list-group-item d-flex justify-content-between align-items-center';
       li.innerHTML = `<div>
@@ -88,7 +98,6 @@ function startUsersListener() {
       usersList.appendChild(li);
     });
 
-    // вешаем события
     document.querySelectorAll('.startChatBtn').forEach(btn=>{
       btn.addEventListener('click', () => {
         const uid = btn.dataset.uid;
@@ -99,37 +108,38 @@ function startUsersListener() {
   });
 }
 
-// Сохранение имени
+// ------------------ Сохранение имени ------------------
 saveNameBtn.addEventListener('click', async () => {
   const nm = (nameInput.value || '').trim();
   if (!nm) return alert('Введите имя');
   localStorage.setItem('displayName', nm);
   meDisplay.innerText = nm;
-  // обновим документ пользователя
-  try {
-    await setDoc(doc(db, 'users', auth.currentUser.uid), { name: nm, lastSeen: serverTimestamp(), online: true }, { merge: true });
-    alert('Имя сохранено');
-  } catch(e) { console.error(e); alert('Ошибка'); }
+
+  const user = authManager.getCurrentUser();
+  if (user) {
+    try {
+      await setDoc(doc(db, 'users', user.id), { name: nm, lastSeen: serverTimestamp(), online: true }, { merge: true });
+      alert('Имя сохранено');
+    } catch(e) { console.error(e); alert('Ошибка'); }
+  }
 });
 
-// Sign out
+// ------------------ Выход ------------------
 signoutBtn.addEventListener('click', async () => {
-  await signOutUser();
-  // очистим localStorage, чтобы при новом входе задать имя заново при желании
+  authManager.logout();
   localStorage.removeItem('displayName');
   location.reload();
 });
 
-// Открыть чат с пользователем
+// ------------------ Открыть чат ------------------
 async function openChat(peerUid, peerName) {
   currentPeer = { uid: peerUid, name: peerName };
-  currentChatId = uidPair(auth.currentUser.uid, peerUid);
+  currentChatId = uidPair(authManager.getCurrentUser().id, peerUid);
   chatWith.innerText = peerName;
   chatHeader.classList.remove('d-none');
   composer.classList.remove('d-none');
   messagesDiv.innerHTML = '';
-  // переключим вид: выделим колонку чата (можно оставить)
-  // Подписываемся на сообщения этого чата
+
   const messagesCol = collection(db, 'chats', currentChatId, 'messages');
   const q = query(messagesCol, orderBy('timestamp', 'asc'));
   if (messagesUnsub) messagesUnsub();
@@ -138,8 +148,7 @@ async function openChat(peerUid, peerName) {
       const d = change.doc;
       if (change.type === 'added') {
         appendMessageToUI(d.id, d.data());
-        // если сообщение пришло не от меня и чат не в фокусе — уведомляем
-        if (d.data().from !== auth.currentUser.uid) {
+        if (d.data().from !== authManager.getCurrentUser().id) {
           if (!isChatActiveWith(peerUid)) {
             showInAppNotification(peerName, d.data());
             playNotify();
@@ -148,11 +157,9 @@ async function openChat(peerUid, peerName) {
       }
     });
   });
-
-  // UI: прокрутка к низу handled in appendMessageToUI
 }
 
-// Вернуться к списку
+// ------------------ Вернуться к списку ------------------
 backBtn.addEventListener('click', () => {
   currentChatId = null;
   currentPeer = null;
@@ -162,29 +169,18 @@ backBtn.addEventListener('click', () => {
   messagesDiv.innerHTML = '';
 });
 
-// Отправка сообщения (текст/изображение)
-sendBtn.addEventListener('click', async () => {
-  await sendMessage();
-});
-
-messageInput.addEventListener('keydown', async (e) => {
-  if (e.key === 'Enter') await sendMessage();
-});
-
+// ------------------ Отправка сообщения ------------------
+sendBtn.addEventListener('click', async () => { await sendMessage(); });
+messageInput.addEventListener('keydown', async (e) => { if (e.key==='Enter') await sendMessage(); });
 attachBtn.addEventListener('click', () => imageInput.click());
-
 imageInput.addEventListener('change', async () => {
-  // можем сразу отправлять файл
   const file = imageInput.files[0];
   if (!file) return;
   await sendMessage(file);
   imageInput.value = '';
 });
-
-// Локальная очистка
 clearLocalBtn.addEventListener('click', () => { messagesDiv.innerHTML = ''; });
 
-// helper: отправка
 async function sendMessage(file=null) {
   const text = (messageInput.value || '').trim();
   if (!currentChatId) return alert('Выберите пользователя для чата');
@@ -199,7 +195,7 @@ async function sendMessage(file=null) {
   }
   try {
     await addDoc(messagesRef, {
-      from: auth.currentUser.uid,
+      from: authManager.getCurrentUser().id,
       to: currentPeer.uid,
       text: text || null,
       image: imageUrl,
@@ -212,14 +208,14 @@ async function sendMessage(file=null) {
   }
 }
 
-// UI: добавить сообщение в окно
+// ------------------ UI: добавить сообщение ------------------
 function appendMessageToUI(id, data) {
   if (document.querySelector(`[data-id="${id}"]`)) return;
   const div = document.createElement('div');
-  div.className = 'msg ' + ((data.from === auth.currentUser.uid) ? 'me' : 'them');
+  div.className = 'msg ' + ((data.from === authManager.getCurrentUser().id) ? 'me' : 'them');
   div.dataset.id = id;
-  const time = data.timestamp ? new Date(data.timestamp.seconds * 1000).toLocaleTimeString() : '';
-  const who = (data.from === auth.currentUser.uid) ? 'Вы' : escapeHtml(currentPeer ? currentPeer.name : '');
+  const time = data.timestamp ? new Date(data.timestamp.seconds*1000).toLocaleTimeString() : '';
+  const who = (data.from === authManager.getCurrentUser().id) ? 'Вы' : escapeHtml(currentPeer ? currentPeer.name : '');
   const textHtml = data.text ? `<div>${escapeHtml(data.text)}</div>` : '';
   const imageHtml = data.image ? `<div><img src="${escapeHtml(data.image)}" alt="img"></div>` : '';
   div.innerHTML = `<div class="small text-muted">${who} · ${time}</div>${textHtml}${imageHtml}`;
@@ -227,14 +223,13 @@ function appendMessageToUI(id, data) {
   messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
-// Проверка активного чата
+// ------------------ Проверка активного чата ------------------
 function isChatActiveWith(peerUid) {
   return currentPeer && currentPeer.uid === peerUid;
 }
 
-// Уведомление (in-app + системное)
+// ------------------ Уведомление ------------------
 function showInAppNotification(title, messageData) {
-  // системное уведомление (если разрешено)
   if (Notification.permission === 'granted') {
     navigator.serviceWorker.getRegistration().then(reg => {
       if (reg) {
@@ -246,19 +241,14 @@ function showInAppNotification(title, messageData) {
           data: { chatId: currentChatId, from: messageData.from }
         });
       } else {
-        // fallback — обычный Notification
         try { new Notification(title, { body: messageData.text || 'Фото' }); } catch(e){}
       }
     });
   }
 }
 
-// Регистрация service worker
+// ------------------ Service Worker ------------------
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./service-worker.js').then(()=> console.log('SW ok')).catch(console.error);
 }
-
-// Обработка клика по notification в service worker -> можно перейти в чат (обрабатывается в sw)
-navigator.serviceWorker.addEventListener('message', (ev)=> {
-  // не используем сейчас
-});
+navigator.serviceWorker.addEventListener('message', ()=>{});
