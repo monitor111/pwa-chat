@@ -4,10 +4,9 @@ import { signInAnonymously, onAuthStateChanged, signOut } from 'https://www.gsta
 import { doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
 
 // Функция для обеспечения авторизации
-function ensureAuth(onReady) {
+export function ensureAuth(onReady) {
   onAuthStateChanged(auth, async (user) => {
     if (user) {
-      // Проверяем displayName в localStorage
       const displayName = localStorage.getItem('displayName') || ('User-' + user.uid.slice(-4));
       try {
         await setDoc(doc(db, 'users', user.uid), {
@@ -19,16 +18,15 @@ function ensureAuth(onReady) {
       } catch (e) {
         console.error('Ошибка обновления Firestore:', e);
       }
-      onReady(user); // вызываем callback, чтобы app.js продолжил
+      onReady(user);
     } else {
-      // если нет пользователя, анонимный вход
       signInAnonymously(auth).catch(console.error);
     }
   });
 }
 
 // Функция для выхода пользователя
-async function signOutUser() {
+export async function signOutUser() {
   const user = auth.currentUser;
   if (user) {
     try {
@@ -42,9 +40,3 @@ async function signOutUser() {
   }
   await signOut(auth).catch(console.error);
 }
-
-// Экспортируем через объект authManager
-export const authManager = {
-  ensureAuth,
-  signOutUser
-};

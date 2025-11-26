@@ -1,6 +1,6 @@
 // app.js
 import { auth, db, storage } from './firebase-config.js';
-import { authManager } from './auth.js';
+import { ensureAuth, signOutUser } from './auth.js';
 import {
   collection, doc, setDoc, getDocs, query, orderBy, onSnapshot,
   where, serverTimestamp, addDoc, getDoc
@@ -56,27 +56,17 @@ async function requestNotifications() {
 }
 
 // ------------------ Инициализация пользователя ------------------
-(async () => {
-  me = authManager.getCurrentUser();
-  if (!me) {
-    // ждём пока Firebase создаст анонимного пользователя
-    const waitForUser = () => new Promise(resolve => {
-      const interval = setInterval(() => {
-        const u = authManager.getCurrentUser();
-        if (u) { clearInterval(interval); resolve(u); }
-      }, 100);
-    });
-    me = await waitForUser();
-  }
+ensureAuth(async (user) => {
+  me = user;
 
   loader.style.display = 'none';
   main.style.display = '';
-  meDisplay.innerText = localStorage.getItem('displayName') || me.name || ('User-' + me.id.slice(-4));
+  meDisplay.innerText = localStorage.getItem('displayName') || me.displayName || ('User-' + me.uid.slice(-4));
   nameInput.value = localStorage.getItem('displayName') || '';
 
   startUsersListener();
   requestNotifications();
-})();
+});
 
 // ------------------ Слушатель пользователей ------------------
 function startUsersListener() {
@@ -86,7 +76,7 @@ function startUsersListener() {
     usersList.innerHTML = '';
     snap.docs.forEach(d => {
       const u = d.data();
-      if (!u.uid || u.uid === (authManager.getCurrentUser() && authManager.getCurrentUser().id)) return;
+      if (!u.uid || u.uid === (auth.currentUser && auth.currentUser.uid)) return;
       const li = document.createElement('li');
       li.className = 'list-group-item d-flex justify-content-between align-items-center';
       li.innerHTML = `<div>
@@ -115,10 +105,10 @@ saveNameBtn.addEventListener('click', async () => {
   localStorage.setItem('displayName', nm);
   meDisplay.innerText = nm;
 
-  const user = authManager.getCurrentUser();
+  const user = auth.currentUser;
   if (user) {
     try {
-      await setDoc(doc(db, 'users', user.id), { name: nm, lastSeen: serverTimestamp(), online: true }, { merge: true });
+      await setDoc(doc(db, 'users', user.uid), { name: nm, lastSeen: serverTimestamp(), online: true }, { merge: true });
       alert('Имя сохранено');
     } catch(e) { console.error(e); alert('Ошибка'); }
   }
@@ -126,7 +116,7 @@ saveNameBtn.addEventListener('click', async () => {
 
 // ------------------ Выход ------------------
 signoutBtn.addEventListener('click', async () => {
-  authManager.logout();
+  await signOutUser();
   localStorage.removeItem('displayName');
   location.reload();
 });
@@ -134,7 +124,7 @@ signoutBtn.addEventListener('click', async () => {
 // ------------------ Открыть чат ------------------
 async function openChat(peerUid, peerName) {
   currentPeer = { uid: peerUid, name: peerName };
-  currentChatId = uidPair(authManager.getCurrentUser().id, peerUid);
+  currentChatId = uidPair(auth.currentUser.uid, peerUid);
   chatWith.innerText = peerName;
   chatHeader.classList.remove('d-none');
   composer.classList.remove('d-none');
@@ -148,7 +138,7 @@ async function openChat(peerUid, peerName) {
       const d = change.doc;
       if (change.type === 'added') {
         appendMessageToUI(d.id, d.data());
-        if (d.data().from !== authManager.getCurrentUser().id) {
+        if (d.data().from !== auth.currentUser.uid) {
           if (!isChatActiveWith(peerUid)) {
             showInAppNotification(peerName, d.data());
             playNotify();
@@ -195,7 +185,7 @@ async function sendMessage(file=null) {
   }
   try {
     await addDoc(messagesRef, {
-      from: authManager.getCurrentUser().id,
+      from: auth.currentUser.uid,
       to: currentPeer.uid,
       text: text || null,
       image: imageUrl,
@@ -212,10 +202,10 @@ async function sendMessage(file=null) {
 function appendMessageToUI(id, data) {
   if (document.querySelector(`[data-id="${id}"]`)) return;
   const div = document.createElement('div');
-  div.className = 'msg ' + ((data.from === authManager.getCurrentUser().id) ? 'me' : 'them');
+  div.className = 'msg ' + ((data.from === auth.currentUser.uid) ? 'me' : 'them');
   div.dataset.id = id;
   const time = data.timestamp ? new Date(data.timestamp.seconds*1000).toLocaleTimeString() : '';
-  const who = (data.from === authManager.getCurrentUser().id) ? 'Вы' : escapeHtml(currentPeer ? currentPeer.name : '');
+  const who = (data.from === auth.currentUser.uid) ? 'Вы' : escapeHtml(currentPeer ? currentPeer.name : '');
   const textHtml = data.text ? `<div>${escapeHtml(data.text)}</div>` : '';
   const imageHtml = data.image ? `<div><img src="${escapeHtml(data.image)}" alt="img"></div>` : '';
   div.innerHTML = `<div class="small text-muted">${who} · ${time}</div>${textHtml}${imageHtml}`;
