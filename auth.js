@@ -4,7 +4,7 @@ import { signInAnonymously, onAuthStateChanged, signOut } from 'https://www.gsta
 import { doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
 
 // Функция для обеспечения авторизации
-export function ensureAuth(onReady) {
+function ensureAuth(onReady) {
   onAuthStateChanged(auth, async (user) => {
     if (user) {
       // Проверяем displayName в localStorage
@@ -28,7 +28,7 @@ export function ensureAuth(onReady) {
 }
 
 // Функция для выхода пользователя
-export async function signOutUser() {
+async function signOutUser() {
   const user = auth.currentUser;
   if (user) {
     try {
@@ -42,3 +42,9 @@ export async function signOutUser() {
   }
   await signOut(auth).catch(console.error);
 }
+
+// Экспортируем через объект authManager
+export const authManager = {
+  ensureAuth,
+  signOutUser
+};
