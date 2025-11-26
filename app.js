@@ -1,340 +1,264 @@
-import { db } from './firebase-config.js';
-import { authManager } from './auth.js';
-import { 
-    collection, 
-    addDoc, 
-    query, 
-    orderBy, 
-    onSnapshot,
-    serverTimestamp 
-} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-messaging.js';
+// app.js
+import { auth, db, storage } from './firebase-config.js';
+import { ensureAuth, signOutUser } from './auth.js';
+import {
+  collection, doc, setDoc, getDocs, query, orderBy, onSnapshot,
+  where, serverTimestamp, addDoc, getDoc
+} from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
+import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-storage.js';
 
-const HIDDEN_MESSAGES_KEY = 'pwa_chat_hidden_messages';
+const loader = document.getElementById('loader');
+const main = document.getElementById('main');
+const meDisplay = document.getElementById('meDisplay');
+const usersList = document.getElementById('usersList');
+const nameInput = document.getElementById('nameInput');
+const saveNameBtn = document.getElementById('saveNameBtn');
+const signoutBtn = document.getElementById('signoutBtn');
 
-class ChatApp {
-    constructor() {
-        this.messagesContainer = document.getElementById('messages-container');
-        this.messageInput = document.getElementById('message-input');
-        this.sendBtn = document.getElementById('send-btn');
-        this.clearChatBtn = document.getElementById('clear-chat-btn');
-        this.authContainer = document.getElementById('auth-container');
-        this.chatContainer = document.getElementById('chat-container');
-        this.usernameInput = document.getElementById('username-input');
-        this.loginBtn = document.getElementById('login-btn');
-        this.logoutBtn = document.getElementById('logout-btn');
-        this.userNameDisplay = document.getElementById('user-name');
-        this.notificationBanner = document.getElementById('notification-banner');
-        this.enableNotificationsBtn = document.getElementById('enable-notifications-btn');
-        
-        this.unsubscribe = null;
-        this.hiddenMessages = new Set(this.loadHiddenMessages());
-        this.isFirstLoad = true;
-        this.audioContext = null;
+const messagesDiv = document.getElementById('messages');
+const chatHeader = document.getElementById('chatHeader');
+const chatWith = document.getElementById('chatWith');
+const backBtn = document.getElementById('backBtn');
+const composer = document.getElementById('composer');
+const messageInput = document.getElementById('messageInput');
+const sendBtn = document.getElementById('sendBtn');
+const clearLocalBtn = document.getElementById('clearLocalBtn');
+const imageInput = document.getElementById('imageInput');
+const attachBtn = document.getElementById('attachBtn');
+const notifySound = document.getElementById('notifySound');
 
-        this.messaging = getMessaging();
-        this.fcmToken = null;
-        
-        this.init();
-    }
+let me = null;
+let usersUnsub = null;
+let messagesUnsub = null;
+let currentChatId = null; // doc id для чата (сортируем uid-а)
+let currentPeer = null; // объект пользователя, с кем чат
 
-    async init() {
-        this.setupEventListeners();
-        this.checkAuth();
-        this.setupPWA();
-        await this.setupFCM();
-    }
-
-    // FCM: запрос токена и обработка сообщений на переднем плане
-    async setupFCM() {
-        try {
-            const token = await getToken(this.messaging, { vapidKey: 'BPqRYsN3C1UsOhkysflGXTzQR6ZviYRjBKpuNDw4k1wgckjFeEE4uVQiDJsnlmLyDFrOUAaXIBsnAGBCvf8ffEA' });
-            if (token) {
-                console.log('FCM токен получен:', token);
-                this.fcmToken = token;
-            } else {
-                console.warn('FCM токен не получен. Разрешите уведомления.');
-            }
-
-            onMessage(this.messaging, (payload) => {
-                console.log('Сообщение на переднем плане:', payload);
-                this.playNotificationSound({ userName: payload.notification.title, text: payload.notification.body });
-            });
-        } catch (error) {
-            console.error('Ошибка FCM:', error);
-        }
-    }
-
-    checkNotificationPermission() {
-        if ('Notification' in window) {
-            if (Notification.permission === 'default') {
-                this.notificationBanner.classList.remove('d-none');
-            } else if (Notification.permission === 'denied') {
-                this.notificationBanner.classList.remove('d-none');
-                this.notificationBanner.querySelector('.alert').innerHTML = `
-                    <strong>⚠️ Уведомления заблокированы!</strong><br>
-                    Разрешите уведомления в настройках браузера/телефона для получения звука когда приложение закрыто.
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                `;
-            }
-        }
-    }
-
-    async requestNotificationPermission() {
-        if ('Notification' in window && Notification.permission === 'default') {
-            try {
-                const permission = await Notification.requestPermission();
-                if (permission === 'granted') {
-                    console.log('Уведомления разрешены!');
-                    this.notificationBanner.classList.add('d-none');
-                    new Notification('Уведомления включены! 🎉', {
-                        body: 'Теперь вы будете получать звук даже когда приложение закрыто',
-                        icon: 'icons/icon-192x192.png'
-                    });
-                    // После разрешения - получаем токен FCM
-                    await this.setupFCM();
-                } else {
-                    alert('Уведомления не разрешены. Включите их в настройках браузера.');
-                }
-            } catch (error) {
-                console.error('Ошибка запроса уведомлений:', error);
-            }
-        }
-    }
-
-    playBeep() {
-        if (!this.audioContext) {
-            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        const oscillator = this.audioContext.createOscillator();
-        const gainNode = this.audioContext.createGain();
-        oscillator.connect(gainNode);
-        gainNode.connect(this.audioContext.destination);
-        oscillator.frequency.setValueAtTime(800, this.audioContext.currentTime);
-        oscillator.frequency.exponentialRampToValueAtTime(600, this.audioContext.currentTime + 0.15);
-        gainNode.gain.setValueAtTime(0.4, this.audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.2);
-        oscillator.start(this.audioContext.currentTime);
-        oscillator.stop(this.audioContext.currentTime + 0.2);
-    }
-
-    setupEventListeners() {
-        this.loginBtn.addEventListener('click', () => this.handleLogin());
-        this.usernameInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.handleLogin();
-        });
-
-        this.logoutBtn.addEventListener('click', () => this.handleLogout());
-        this.sendBtn.addEventListener('click', () => this.sendMessage());
-        this.messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.sendMessage();
-        });
-
-        this.clearChatBtn.addEventListener('click', () => this.clearLocalChat());
-        this.enableNotificationsBtn.addEventListener('click', () => this.requestNotificationPermission());
-    }
-
-    checkAuth() {
-        if (authManager.isLoggedIn()) {
-            this.showChat();
-        } else {
-            this.showAuth();
-        }
-    }
-
-    handleLogin() {
-        const username = this.usernameInput.value.trim();
-        if (!username) {
-            alert('Пожалуйста, введите ваше имя');
-            return;
-        }
-        try {
-            authManager.login(username);
-            this.showChat();
-        } catch (error) {
-            alert(error.message);
-        }
-    }
-
-    handleLogout() {
-        if (this.unsubscribe) this.unsubscribe();
-        authManager.logout();
-        this.hiddenMessages.clear();
-        localStorage.removeItem(HIDDEN_MESSAGES_KEY);
-        this.isFirstLoad = true;
-        this.showAuth();
-    }
-
-    showAuth() {
-        this.authContainer.classList.remove('d-none');
-        this.chatContainer.classList.add('d-none');
-        this.usernameInput.value = '';
-        this.usernameInput.focus();
-    }
-
-    showChat() {
-        this.authContainer.classList.add('d-none');
-        this.chatContainer.classList.remove('d-none');
-        const user = authManager.getCurrentUser();
-        this.userNameDisplay.textContent = user.name;
-        this.checkNotificationPermission();
-        this.listenToMessages();
-        this.messageInput.focus();
-    }
-
-    async sendMessage() {
-        const text = this.messageInput.value.trim();
-        if (!text) return;
-        const user = authManager.getCurrentUser();
-        try {
-            await addDoc(collection(db, 'messages'), {
-                text: text,
-                userId: user.id,
-                userName: user.name,
-                timestamp: serverTimestamp()
-            });
-            this.messageInput.value = '';
-            this.messageInput.focus();
-        } catch (error) {
-            console.error('Ошибка отправки:', error);
-            alert('Не удалось отправить сообщение. Проверьте подключение.');
-        }
-    }
-
-    listenToMessages() {
-        const q = query(collection(db, 'messages'), orderBy('timestamp', 'asc'));
-        this.unsubscribe = onSnapshot(q, (snapshot) => {
-            snapshot.docChanges().forEach((change) => {
-                if (change.type === 'added') {
-                    const messageData = change.doc.data();
-                    const messageId = change.doc.id;
-                    const user = authManager.getCurrentUser();
-                    if (!this.hiddenMessages.has(messageId)) {
-                        this.displayMessage({ id: messageId, ...messageData });
-                        if (!this.isFirstLoad && messageData.userId !== user.id) {
-                            this.playNotificationSound(messageData);
-                        }
-                    }
-                }
-            });
-            if (this.isFirstLoad) this.isFirstLoad = false;
-            this.scrollToBottom();
-        }, (error) => {
-            console.error('Ошибка получения сообщений:', error);
-        });
-    }
-
-    playNotificationSound(messageData) {
-        try {
-            this.playBeep();
-            setTimeout(() => this.playBeep(), 300);
-            setTimeout(() => this.playBeep(), 600);
-            if ('vibrate' in navigator) navigator.vibrate([200, 150, 200, 150, 200]);
-            this.showSystemNotification(messageData);
-        } catch (error) {
-            console.error('Ошибка воспроизведения звука:', error);
-        }
-    }
-
-    showSystemNotification(messageData) {
-        if ('Notification' in window && Notification.permission === 'granted') {
-            const notification = new Notification('💬 ' + messageData.userName, {
-                body: messageData.text,
-                icon: 'icons/icon-192x192.png',
-                badge: 'icons/icon-192x192.png',
-                tag: 'chat-message',
-                requireInteraction: false,
-                vibrate: [200, 150, 200, 150, 200],
-                silent: false
-            });
-            notification.onclick = () => { window.focus(); notification.close(); };
-            setTimeout(() => notification.close(), 7000);
-        }
-    }
-
-    displayMessage(message) {
-        const user = authManager.getCurrentUser();
-        const isOwnMessage = message.userId === user.id;
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${isOwnMessage ? 'own' : 'other'}`;
-        messageDiv.dataset.messageId = message.id;
-
-        if (!isOwnMessage) {
-            const senderDiv = document.createElement('div');
-            senderDiv.className = 'message-sender';
-            senderDiv.textContent = message.userName;
-            messageDiv.appendChild(senderDiv);
-        }
-
-        const textDiv = document.createElement('div');
-        textDiv.className = 'message-text';
-        textDiv.textContent = message.text;
-        messageDiv.appendChild(textDiv);
-
-        if (message.timestamp) {
-            const timeDiv = document.createElement('div');
-            timeDiv.className = 'message-time';
-            const date = message.timestamp.toDate();
-            timeDiv.textContent = date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-            messageDiv.appendChild(timeDiv);
-        }
-
-        this.messagesContainer.appendChild(messageDiv);
-    }
-
-    clearLocalChat() {
-        if (!confirm('Очистить историю чата на этом устройстве?')) return;
-        const messages = this.messagesContainer.querySelectorAll('.message');
-        messages.forEach(msg => {
-            const messageId = msg.dataset.messageId;
-            if (messageId) this.hiddenMessages.add(messageId);
-            msg.remove();
-        });
-        this.saveHiddenMessages();
-    }
-
-    loadHiddenMessages() {
-        const stored = localStorage.getItem(HIDDEN_MESSAGES_KEY);
-        return stored ? JSON.parse(stored) : [];
-    }
-
-    saveHiddenMessages() {
-        localStorage.setItem(HIDDEN_MESSAGES_KEY, JSON.stringify([...this.hiddenMessages]));
-    }
-
-    scrollToBottom() {
-        this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
-    }
-
-    setupPWA() {
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('service-worker.js')
-                .then(() => console.log('Service Worker зарегистрирован'))
-                .catch(err => console.error('Ошибка Service Worker:', err));
-        }
-
-        let deferredPrompt;
-        const installPrompt = document.getElementById('install-prompt');
-        const installBtn = document.getElementById('install-btn');
-
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
-            installPrompt.classList.remove('d-none');
-        });
-
-        installBtn.addEventListener('click', async () => {
-            if (deferredPrompt) {
-                deferredPrompt.prompt();
-                const { outcome } = await deferredPrompt.userChoice;
-                deferredPrompt = null;
-                installPrompt.classList.add('d-none');
-            }
-        });
-    }
+// Утилиты
+function escapeHtml(str='') {
+  return String(str).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    new ChatApp();
+function uidPair(a, b) {
+  return [a,b].sort().join('_');
+}
+
+function playNotify() {
+  try { notifySound.play().catch(()=>{}); } catch(e){}
+  if (navigator.vibrate) navigator.vibrate([100,40,100]);
+}
+
+async function requestNotifications() {
+  if (Notification.permission === 'default') {
+    try { await Notification.requestPermission(); } catch(e) {}
+  }
+}
+
+// Подключаемся
+ensureAuth(async (user) => {
+  me = user;
+  loader.style.display = 'none';
+  main.style.display = '';
+  meDisplay.innerText = localStorage.getItem('displayName') || ('User-' + me.uid.slice(-4));
+  nameInput.value = localStorage.getItem('displayName') || '';
+
+  // Начинаем слушать список пользователей
+  startUsersListener();
+
+  // попросим разрешение на нотификации
+  requestNotifications();
 });
 
+// Слушатель пользователей
+function startUsersListener() {
+  const usersCol = collection(db, 'users');
+  if (usersUnsub) usersUnsub();
+  usersUnsub = onSnapshot(usersCol, (snap) => {
+    usersList.innerHTML = '';
+    snap.docs.forEach(d => {
+      const u = d.data();
+      if (!u.uid || u.uid === (auth.currentUser && auth.currentUser.uid)) return; // не показываем себя
+      const li = document.createElement('li');
+      li.className = 'list-group-item d-flex justify-content-between align-items-center';
+      li.innerHTML = `<div>
+        <span class="status ${u.online ? 'online' : 'offline'}"></span>
+        <strong>${escapeHtml(u.name||'User')}</strong>
+        <div class="text-muted small">${u.online ? 'online' : ('last: ' + (u.lastSeen ? new Date(u.lastSeen.seconds*1000).toLocaleString() : '—'))}</div>
+      </div>
+      <div><button class="btn btn-sm btn-primary startChatBtn" data-uid="${u.uid}" data-name="${escapeHtml(u.name||'User')}">Чат</button></div>`;
+      usersList.appendChild(li);
+    });
+
+    // вешаем события
+    document.querySelectorAll('.startChatBtn').forEach(btn=>{
+      btn.addEventListener('click', () => {
+        const uid = btn.dataset.uid;
+        const name = btn.dataset.name;
+        openChat(uid, name);
+      });
+    });
+  });
+}
+
+// Сохранение имени
+saveNameBtn.addEventListener('click', async () => {
+  const nm = (nameInput.value || '').trim();
+  if (!nm) return alert('Введите имя');
+  localStorage.setItem('displayName', nm);
+  meDisplay.innerText = nm;
+  // обновим документ пользователя
+  try {
+    await setDoc(doc(db, 'users', auth.currentUser.uid), { name: nm, lastSeen: serverTimestamp(), online: true }, { merge: true });
+    alert('Имя сохранено');
+  } catch(e) { console.error(e); alert('Ошибка'); }
+});
+
+// Sign out
+signoutBtn.addEventListener('click', async () => {
+  await signOutUser();
+  // очистим localStorage, чтобы при новом входе задать имя заново при желании
+  localStorage.removeItem('displayName');
+  location.reload();
+});
+
+// Открыть чат с пользователем
+async function openChat(peerUid, peerName) {
+  currentPeer = { uid: peerUid, name: peerName };
+  currentChatId = uidPair(auth.currentUser.uid, peerUid);
+  chatWith.innerText = peerName;
+  chatHeader.classList.remove('d-none');
+  composer.classList.remove('d-none');
+  messagesDiv.innerHTML = '';
+  // переключим вид: выделим колонку чата (можно оставить)
+  // Подписываемся на сообщения этого чата
+  const messagesCol = collection(db, 'chats', currentChatId, 'messages');
+  const q = query(messagesCol, orderBy('timestamp', 'asc'));
+  if (messagesUnsub) messagesUnsub();
+  messagesUnsub = onSnapshot(q, (snap) => {
+    snap.docChanges().forEach(change => {
+      const d = change.doc;
+      if (change.type === 'added') {
+        appendMessageToUI(d.id, d.data());
+        // если сообщение пришло не от меня и чат не в фокусе — уведомляем
+        if (d.data().from !== auth.currentUser.uid) {
+          if (!isChatActiveWith(peerUid)) {
+            showInAppNotification(peerName, d.data());
+            playNotify();
+          }
+        }
+      }
+    });
+  });
+
+  // UI: прокрутка к низу handled in appendMessageToUI
+}
+
+// Вернуться к списку
+backBtn.addEventListener('click', () => {
+  currentChatId = null;
+  currentPeer = null;
+  if (messagesUnsub) messagesUnsub();
+  chatHeader.classList.add('d-none');
+  composer.classList.add('d-none');
+  messagesDiv.innerHTML = '';
+});
+
+// Отправка сообщения (текст/изображение)
+sendBtn.addEventListener('click', async () => {
+  await sendMessage();
+});
+
+messageInput.addEventListener('keydown', async (e) => {
+  if (e.key === 'Enter') await sendMessage();
+});
+
+attachBtn.addEventListener('click', () => imageInput.click());
+
+imageInput.addEventListener('change', async () => {
+  // можем сразу отправлять файл
+  const file = imageInput.files[0];
+  if (!file) return;
+  await sendMessage(file);
+  imageInput.value = '';
+});
+
+// Локальная очистка
+clearLocalBtn.addEventListener('click', () => { messagesDiv.innerHTML = ''; });
+
+// helper: отправка
+async function sendMessage(file=null) {
+  const text = (messageInput.value || '').trim();
+  if (!currentChatId) return alert('Выберите пользователя для чата');
+  if (!text && !file) return;
+  const messagesRef = collection(db, 'chats', currentChatId, 'messages');
+  let imageUrl = null;
+  if (file) {
+    const path = `chat_images/${currentChatId}/${Date.now()}_${file.name}`;
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, file);
+    imageUrl = await getDownloadURL(storageRef);
+  }
+  try {
+    await addDoc(messagesRef, {
+      from: auth.currentUser.uid,
+      to: currentPeer.uid,
+      text: text || null,
+      image: imageUrl,
+      timestamp: serverTimestamp()
+    });
+    messageInput.value = '';
+  } catch(e) {
+    console.error(e);
+    alert('Ошибка отправки');
+  }
+}
+
+// UI: добавить сообщение в окно
+function appendMessageToUI(id, data) {
+  if (document.querySelector(`[data-id="${id}"]`)) return;
+  const div = document.createElement('div');
+  div.className = 'msg ' + ((data.from === auth.currentUser.uid) ? 'me' : 'them');
+  div.dataset.id = id;
+  const time = data.timestamp ? new Date(data.timestamp.seconds * 1000).toLocaleTimeString() : '';
+  const who = (data.from === auth.currentUser.uid) ? 'Вы' : escapeHtml(currentPeer ? currentPeer.name : '');
+  const textHtml = data.text ? `<div>${escapeHtml(data.text)}</div>` : '';
+  const imageHtml = data.image ? `<div><img src="${escapeHtml(data.image)}" alt="img"></div>` : '';
+  div.innerHTML = `<div class="small text-muted">${who} · ${time}</div>${textHtml}${imageHtml}`;
+  messagesDiv.appendChild(div);
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+// Проверка активного чата
+function isChatActiveWith(peerUid) {
+  return currentPeer && currentPeer.uid === peerUid;
+}
+
+// Уведомление (in-app + системное)
+function showInAppNotification(title, messageData) {
+  // системное уведомление (если разрешено)
+  if (Notification.permission === 'granted') {
+    navigator.serviceWorker.getRegistration().then(reg => {
+      if (reg) {
+        const body = messageData.text ? messageData.text : (messageData.image ? 'Фото' : '');
+        reg.showNotification(title, {
+          body,
+          tag: currentChatId + '_' + Date.now(),
+          renotify: false,
+          data: { chatId: currentChatId, from: messageData.from }
+        });
+      } else {
+        // fallback — обычный Notification
+        try { new Notification(title, { body: messageData.text || 'Фото' }); } catch(e){}
+      }
+    });
+  }
+}
+
+// Регистрация service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./service-worker.js').then(()=> console.log('SW ok')).catch(console.error);
+}
+
+// Обработка клика по notification в service worker -> можно перейти в чат (обрабатывается в sw)
+navigator.serviceWorker.addEventListener('message', (ev)=> {
+  // не используем сейчас
+});

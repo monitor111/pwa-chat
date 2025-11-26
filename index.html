@@ -1,89 +1,70 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#0d6efd">
-    <title>PWA Chat</title>
-    <link rel="manifest" href="manifest.json">
-    <link rel="icon" type="image/png" href="icons/icon-192x192.png">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Chat PWA</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0d6efd">
 </head>
 <body>
-    <div id="auth-container" class="container mt-5">
-        <div class="row justify-content-center">
-            <div class="col-md-6">
-                <div class="card shadow">
-                    <div class="card-body">
-                        <h2 class="card-title text-center mb-4">PWA Chat</h2>
-                        <div id="auth-form">
-                            <div class="mb-3">
-                                <input type="text" id="username-input" class="form-control" placeholder="Введите ваше имя" autocomplete="off">
-                            </div>
-                            <button id="login-btn" class="btn btn-primary w-100">Войти в чат</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
+  <div class="container py-4" id="app">
+    <div id="loader" class="text-center my-5">Загрузка...</div>
+
+    <!-- Пользователь / шапка -->
+    <div id="main" style="display:none;">
+      <div class="d-flex align-items-center mb-3">
+        <h3 class="me-auto">PWA Chat</h3>
+        <div class="me-2" id="meDisplay"></div>
+        <button class="btn btn-outline-secondary btn-sm" id="signoutBtn">Выйти</button>
+      </div>
+
+      <div class="row">
+        <!-- Список пользователей -->
+        <div class="col-4 border-end" id="usersCol" style="height:70vh; overflow:auto;">
+          <div class="d-flex mb-2">
+            <input id="nameInput" class="form-control form-control-sm" placeholder="Ваше имя">
+            <button id="saveNameBtn" class="btn btn-sm btn-primary ms-2">Сохранить</button>
+          </div>
+          <h6>Пользователи</h6>
+          <ul class="list-group" id="usersList"></ul>
         </div>
+
+        <!-- Окно чата -->
+        <div class="col-8 d-flex flex-column" id="chatCol" style="height:70vh;">
+          <div id="chatHeader" class="border-bottom py-2 px-3 d-none">
+            <button id="backBtn" class="btn btn-link btn-sm">&larr; Назад</button>
+            <span id="chatWith" class="fw-bold"></span>
+          </div>
+
+          <div id="messages" class="flex-grow-1 p-3 overflow-auto bg-light"></div>
+
+          <div id="composer" class="mt-2 border-top pt-2 d-none">
+            <div class="d-flex mb-2">
+              <input type="file" id="imageInput" accept="image/*" class="form-control form-control-sm">
+              <button id="attachBtn" class="btn btn-sm btn-secondary ms-2">Прикрепить</button>
+            </div>
+            <div class="input-group">
+              <input id="messageInput" class="form-control" placeholder="Сообщение...">
+              <button id="sendBtn" class="btn btn-primary">Отправить</button>
+            </div>
+            <div class="mt-2">
+              <button id="clearLocalBtn" class="btn btn-outline-secondary btn-sm">Очистить локально</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div id="chat-container" class="container-fluid d-none">
-        <div class="row">
-            <div class="col-12">
-                <nav class="navbar navbar-dark bg-primary">
-                    <div class="container-fluid">
-                        <span class="navbar-brand mb-0 h1">PWA Chat</span>
-                        <div class="d-flex align-items-center">
-                            <span id="user-name" class="text-white me-3"></span>
-                            <button id="logout-btn" class="btn btn-outline-light btn-sm">Выйти</button>
-                        </div>
-                    </div>
-                </nav>
-            </div>
-        </div>
+  </div>
 
-        <!-- Уведомление о разрешении на уведомления -->
-        <div id="notification-banner" class="d-none">
-            <div class="alert alert-warning alert-dismissible fade show m-3" role="alert">
-                <strong>🔔 Включите уведомления!</strong><br>
-                Чтобы получать звук когда приложение закрыто, разрешите уведомления.
-                <button id="enable-notifications-btn" class="btn btn-sm btn-warning mt-2 w-100">Включить уведомления</button>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        </div>
+  <audio id="notifySound" src="notify.mp3" preload="auto"></audio>
 
-        <div class="row chat-row">
-            <div class="col-12">
-                <div id="messages-container" class="messages-container p-3"></div>
-            </div>
-        </div>
-
-        <div class="row">
-            <div class="col-12">
-                <div class="input-container p-3 bg-light border-top">
-                    <div class="d-flex gap-2 mb-2">
-                        <input type="text" id="message-input" class="form-control" placeholder="Введите сообщение..." autocomplete="off">
-                        <button id="send-btn" class="btn btn-primary">Отправить</button>
-                    </div>
-                    <button id="clear-chat-btn" class="btn btn-outline-danger btn-sm w-100">Очистить чат (только локально)</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="install-prompt" class="position-fixed bottom-0 start-0 end-0 p-3 d-none">
-        <div class="alert alert-info alert-dismissible fade show" role="alert">
-            <strong>Установить приложение:</strong> Добавьте чат на главный экран!
-            <button id="install-btn" class="btn btn-sm btn-primary ms-2">Установить</button>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script type="module" src="firebase-config.js"></script>
-    <script type="module" src="auth.js"></script>
-    <script type="module" src="app.js"></script>
+  <script type="module" src="firebase-config.js"></script>
+  <script type="module" src="auth.js"></script>
+  <script type="module" src="app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

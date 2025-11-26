@@ -1,7 +1,14 @@
 // firebase-config.js
 
-// Конфигурация Firebase
-const firebaseConfig = {
+// Импорты Firebase (modular SDK)
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js';
+import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
+import { getAuth } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js';
+import { getStorage } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-storage.js';
+import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-analytics.js';
+
+// Конфигурация Firebase для твоего проекта
+export const firebaseConfig = {
   apiKey: "AIzaSyCgtqA5RLLZ-krtKyT9JZ5Fe5PokHJco",
   authDomain: "pwa-chat-2e68d.firebaseapp.com",
   projectId: "pwa-chat-2e68d",
@@ -12,12 +19,8 @@ const firebaseConfig = {
 };
 
 // Инициализация Firebase
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js';
-
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-const db = getFirestore(app);
-
-export { db, analytics };
+export const app = initializeApp(firebaseConfig);
+export const db = getFirestore(app);
+export const auth = getAuth(app);
+export const storage = getStorage(app);
+export const analytics = getAnalytics(app);
