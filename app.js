@@ -10,6 +10,8 @@ import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/fireba
 const loader = document.getElementById('loader');
 const main = document.getElementById('main');
 const meDisplay = document.getElementById('meDisplay');
+const usersCol = document.getElementById('usersCol');
+const chatCol = document.getElementById('chatCol');
 const usersList = document.getElementById('usersList');
 const nameInput = document.getElementById('nameInput');
 const saveNameBtn = document.getElementById('saveNameBtn');
@@ -55,6 +57,17 @@ async function requestNotifications() {
   }
 }
 
+// Функция для переключения между списком и чатом на мобильных
+function showChat() {
+  usersCol.classList.add('hidden');
+  chatCol.classList.add('active');
+}
+
+function showUsersList() {
+  usersCol.classList.remove('hidden');
+  chatCol.classList.remove('active');
+}
+
 // ------------------ Инициализация пользователя ------------------
 (async () => {
   await new Promise(resolve => {
@@ -75,21 +88,21 @@ async function requestNotifications() {
 
 // ------------------ Слушатель пользователей ------------------
 function startUsersListener() {
-  const usersCol = collection(db, 'users');
+  const usersColRef = collection(db, 'users');
   if (usersUnsub) usersUnsub();
-  usersUnsub = onSnapshot(usersCol, (snap) => {
+  usersUnsub = onSnapshot(usersColRef, (snap) => {
     usersList.innerHTML = '';
     snap.docs.forEach(d => {
       const u = d.data();
       if (!u.uid || u.uid === me.uid) return;
       const li = document.createElement('li');
       li.className = 'list-group-item d-flex justify-content-between align-items-center';
-      li.innerHTML = `<div>
+      li.innerHTML = `<div class="flex-grow-1">
         <span class="status ${u.online ? 'online' : 'offline'}"></span>
         <strong>${escapeHtml(u.name||'User')}</strong>
-        <div class="text-muted small">${u.online ? 'online' : ('last: ' + (u.lastSeen ? new Date(u.lastSeen.seconds*1000).toLocaleString() : '—'))}</div>
+        <div class="text-muted small">${u.online ? 'онлайн' : ('был(а): ' + (u.lastSeen ? new Date(u.lastSeen.seconds*1000).toLocaleString() : '—'))}</div>
       </div>
-      <div><button class="btn btn-sm btn-primary startChatBtn" data-uid="${u.uid}" data-name="${escapeHtml(u.name||'User')}">Чат</button></div>`;
+      <button class="btn btn-sm btn-primary startChatBtn" data-uid="${u.uid}" data-name="${escapeHtml(u.name||'User')}">💬</button>`;
       usersList.appendChild(li);
     });
 
@@ -131,6 +144,9 @@ async function openChat(peerUid, peerName) {
   chatHeader.classList.remove('d-none');
   composer.classList.remove('d-none');
   messagesDiv.innerHTML = '';
+  
+  // Показать чат на мобильных
+  showChat();
 
   const messagesCol = collection(db, 'chats', currentChatId, 'messages');
   const q = query(messagesCol, orderBy('timestamp', 'asc'));
@@ -159,6 +175,9 @@ backBtn.addEventListener('click', () => {
   chatHeader.classList.add('d-none');
   composer.classList.add('d-none');
   messagesDiv.innerHTML = '';
+  
+  // Показать список пользователей на мобильных
+  showUsersList();
 });
 
 // ------------------ Отправка сообщения ------------------

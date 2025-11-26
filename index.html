@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
   <title>Chat PWA</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
@@ -10,58 +10,56 @@
   <meta name="theme-color" content="#0d6efd">
 </head>
 <body>
-  <div class="container py-4" id="app">
+  <div id="app">
     <div id="loader" class="text-center my-5">Загрузка...</div>
-
-    <!-- Пользователь / шапка -->
+    
     <div id="main" style="display:none;">
-      <div class="d-flex align-items-center mb-3">
-        <h3 class="me-auto">PWA Chat</h3>
-        <div class="me-2" id="meDisplay"></div>
-        <button class="btn btn-outline-secondary btn-sm" id="signoutBtn">Выйти</button>
+      <!-- Шапка -->
+      <div class="app-header">
+        <h5 class="mb-0">PWA Chat</h5>
+        <div class="d-flex align-items-center gap-2">
+          <span id="meDisplay" class="small"></span>
+          <button class="btn btn-outline-light btn-sm" id="signoutBtn">Выйти</button>
+        </div>
       </div>
 
-      <div class="row">
-        <!-- Список пользователей -->
-        <div class="col-4 border-end" id="usersCol" style="height:70vh; overflow:auto;">
-          <div class="d-flex mb-2">
-            <input id="nameInput" class="form-control form-control-sm" placeholder="Ваше имя">
-            <button id="saveNameBtn" class="btn btn-sm btn-primary ms-2">Сохранить</button>
+      <!-- Список пользователей (показывается на мобильном когда чат закрыт) -->
+      <div id="usersCol" class="users-panel">
+        <div class="p-3">
+          <div class="input-group input-group-sm mb-3">
+            <input id="nameInput" class="form-control" placeholder="Ваше имя">
+            <button id="saveNameBtn" class="btn btn-primary">Сохранить</button>
           </div>
           <h6>Пользователи</h6>
           <ul class="list-group" id="usersList"></ul>
         </div>
+      </div>
 
-        <!-- Окно чата -->
-        <div class="col-8 d-flex flex-column" id="chatCol" style="height:70vh;">
-          <div id="chatHeader" class="border-bottom py-2 px-3 d-none">
-            <button id="backBtn" class="btn btn-link btn-sm">&larr; Назад</button>
-            <span id="chatWith" class="fw-bold"></span>
+      <!-- Окно чата (скрыто на мобильном пока не выбран пользователь) -->
+      <div id="chatCol" class="chat-panel">
+        <div id="chatHeader" class="chat-header d-none">
+          <button id="backBtn" class="btn btn-link text-white p-0">&larr;</button>
+          <span id="chatWith" class="fw-bold"></span>
+        </div>
+        
+        <div id="messages" class="messages-container"></div>
+        
+        <div id="composer" class="composer d-none">
+          <input type="file" id="imageInput" accept="image/*" class="d-none">
+          <div class="composer-actions">
+            <button id="attachBtn" class="btn btn-sm btn-outline-secondary">📎</button>
+            <button id="clearLocalBtn" class="btn btn-sm btn-outline-secondary">🗑️</button>
           </div>
-
-          <div id="messages" class="flex-grow-1 p-3 overflow-auto bg-light"></div>
-
-          <div id="composer" class="mt-2 border-top pt-2 d-none">
-            <div class="d-flex mb-2">
-              <input type="file" id="imageInput" accept="image/*" class="form-control form-control-sm">
-              <button id="attachBtn" class="btn btn-sm btn-secondary ms-2">Прикрепить</button>
-            </div>
-            <div class="input-group">
-              <input id="messageInput" class="form-control" placeholder="Сообщение...">
-              <button id="sendBtn" class="btn btn-primary">Отправить</button>
-            </div>
-            <div class="mt-2">
-              <button id="clearLocalBtn" class="btn btn-outline-secondary btn-sm">Очистить локально</button>
-            </div>
+          <div class="composer-input">
+            <input id="messageInput" class="form-control" placeholder="Сообщение...">
+            <button id="sendBtn" class="btn btn-primary">➤</button>
           </div>
         </div>
       </div>
     </div>
-
   </div>
-
+  
   <audio id="notifySound" src="notify.mp3" preload="auto"></audio>
-
   <script type="module" src="firebase-config.js"></script>
   <script type="module" src="auth.js"></script>
   <script type="module" src="app.js"></script>
