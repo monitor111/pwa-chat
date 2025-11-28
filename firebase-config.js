@@ -12,7 +12,7 @@ export const firebaseConfig = {
   apiKey: "AIzaSyCgtqA5RLLZ-krtKyT9JZyL5Fe5PokHJco", // новый ключ
   authDomain: "pwa-chat-2e68d.firebaseapp.com",
   projectId: "pwa-chat-2e68d",
-  storageBucket: "pwa-chat-2e68d.firebasestorage.app",
+  storageBucket: "pwa-chat-2e68d.appspot.com",
   messagingSenderId: "215886265728",
   appId: "1:215886265728:web:241db59ba5cb073bc29565", // новый App ID
   measurementId: "G-KXJ53JW7BL" // новый measurementId
