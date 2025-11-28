@@ -2,52 +2,52 @@
 import { db } from './firebase-config.js';
 import { doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
 
-// Генерация уникального ID для устройства
-function generateDeviceId() {
-  return 'user_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
-}
-
-// Сохранение deviceId в cookie (переживет очистку кеша)
-function saveDeviceIdToCookie(deviceId) {
-  // Cookie будет жить 10 лет
-  const expires = new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toUTCString();
-  document.cookie = `deviceId=${deviceId}; expires=${expires}; path=/; SameSite=Strict`;
-}
-
-// Получение deviceId из cookie
-function getDeviceIdFromCookie() {
-  const cookies = document.cookie.split(';');
-  for (let cookie of cookies) {
-    const [name, value] = cookie.trim().split('=');
-    if (name === 'deviceId') return value;
+// Создание отпечатка браузера/устройства
+async function createFingerprint() {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.textBaseline = 'top';
+  ctx.font = '14px Arial';
+  ctx.fillText('fingerprint', 2, 2);
+  const canvasHash = canvas.toDataURL().slice(-50);
+  
+  const fingerprint = {
+    userAgent: navigator.userAgent,
+    language: navigator.language,
+    platform: navigator.platform,
+    screenResolution: `${screen.width}x${screen.height}`,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    canvas: canvasHash
+  };
+  
+  const fingerprintString = JSON.stringify(fingerprint);
+  
+  // Простой hash
+  let hash = 0;
+  for (let i = 0; i < fingerprintString.length; i++) {
+    const char = fingerprintString.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
   }
-  return null;
+  
+  return 'device_' + Math.abs(hash).toString(36);
 }
 
 // Получение или создание ID устройства
-function getDeviceId() {
-  // Сначала пробуем localStorage
+async function getDeviceId() {
+  // Проверяем localStorage
   let deviceId = localStorage.getItem('deviceId');
   
-  // Если нет в localStorage - пробуем cookie
   if (!deviceId) {
-    deviceId = getDeviceIdFromCookie();
-    if (deviceId) {
-      // Восстанавливаем в localStorage
-      localStorage.setItem('deviceId', deviceId);
-      console.log('deviceId восстановлен из cookie:', deviceId);
-    }
-  }
-  
-  // Если нигде нет - создаем новый
-  if (!deviceId) {
-    deviceId = generateDeviceId();
+    // Создаем fingerprint устройства
+    deviceId = await createFingerprint();
     localStorage.setItem('deviceId', deviceId);
-    saveDeviceIdToCookie(deviceId);
-    console.log('Создан новый deviceId:', deviceId);
-  } else {
-    // Убеждаемся что везде сохранено
-    saveDeviceIdToCookie(deviceId);
+    
+    // Дублируем в cookie
+    const expires = new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000).toUTCString();
+    document.cookie = `deviceId=${deviceId}; expires=${expires}; path=/; SameSite=Strict`;
+    
+    console.log('Создан deviceId на основе fingerprint:', deviceId);
   }
   
   return deviceId;
@@ -55,8 +55,16 @@ function getDeviceId() {
 
 // Функция для обеспечения авторизации
 export async function ensureAuth(onReady) {
-  const deviceId = getDeviceId();
-  const displayName = localStorage.getItem('displayName') || ('User-' + deviceId.slice(-4));
+  const deviceId = await getDeviceId();
+  
+  // Если имя не сохранено - используем временное
+  let displayName = localStorage.getItem('displayName');
+  
+  if (!displayName) {
+    displayName = 'User-' + deviceId.slice(-4);
+    // Автоматически сохраняем временное имя
+    localStorage.setItem('displayName', displayName);
+  }
   
   // Создаем объект пользователя
   const user = {
@@ -83,7 +91,7 @@ export async function ensureAuth(onReady) {
 
 // Функция для выхода пользователя
 export async function signOutUser() {
-  const deviceId = getDeviceId();
+  const deviceId = await getDeviceId();
   
   try {
     await setDoc(doc(db, 'users', deviceId), {
@@ -94,16 +102,13 @@ export async function signOutUser() {
     console.error('Ошибка обновления Firestore при выходе:', e);
   }
   
-  // Очищаем все данные
-  localStorage.removeItem('deviceId');
+  // НЕ очищаем deviceId - только displayName если нужен полный выход
   localStorage.removeItem('displayName');
-  // Удаляем cookie
-  document.cookie = 'deviceId=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
 }
 
 // Функция для обновления статуса онлайн
 export async function updateOnlineStatus(isOnline) {
-  const deviceId = getDeviceId();
+  const deviceId = await getDeviceId();
   
   try {
     await setDoc(doc(db, 'users', deviceId), {
