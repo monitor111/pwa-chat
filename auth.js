@@ -7,6 +7,11 @@ import { doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs
 export function ensureAuth(onReady) {
   onAuthStateChanged(auth, async (user) => {
     if (user) {
+      // Сохраняем UID в localStorage при первом входе
+      if (!localStorage.getItem('savedUID')) {
+        localStorage.setItem('savedUID', user.uid);
+      }
+      
       const displayName = localStorage.getItem('displayName') || ('User-' + user.uid.slice(-4));
       try {
         await setDoc(doc(db, 'users', user.uid), {
@@ -20,7 +25,19 @@ export function ensureAuth(onReady) {
       }
       onReady(user);
     } else {
-      signInAnonymously(auth).catch(console.error);
+      // Проверяем, есть ли сохраненный пользователь
+      const savedUID = localStorage.getItem('savedUID');
+      const savedDisplayName = localStorage.getItem('displayName');
+      
+      // Если есть сохраненные данные, НЕ создаем нового пользователя
+      // Просто ждем, пока Firebase Auth восстановит сессию
+      if (savedUID && savedDisplayName) {
+        console.log('Ожидание восстановления сессии для:', savedDisplayName);
+        // Firebase Auth автоматически восстановит сессию при следующем onAuthStateChanged
+      } else {
+        // Только если это ПЕРВЫЙ заход - создаем анонимного пользователя
+        signInAnonymously(auth).catch(console.error);
+      }
     }
   });
 }
@@ -38,5 +55,10 @@ export async function signOutUser() {
       console.error('Ошибка обновления Firestore при выходе:', e);
     }
   }
+  
+  // Очищаем сохраненные данные при выходе
+  localStorage.removeItem('savedUID');
+  localStorage.removeItem('displayName');
+  
   await signOut(auth).catch(console.error);
 }
