@@ -1,5 +1,5 @@
 // app.js
-import { auth, db, storage } from './firebase-config.js';
+import { db, storage } from './firebase-config.js';
 import { ensureAuth, signOutUser } from './auth.js';
 import {
   collection, doc, setDoc, query, orderBy, onSnapshot,
