@@ -2,7 +2,6 @@
 // Импорты Firebase (modular SDK)
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js';
 import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
-import { getAuth, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js';
 import { getStorage } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-storage.js';
 import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-analytics.js';
 
@@ -20,12 +19,5 @@ export const firebaseConfig = {
 // Инициализация Firebase
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
-export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const analytics = getAnalytics(app);
-
-// КРИТИЧНО: Устанавливаем постоянное хранение сессии
-// Теперь пользователь останется залогинен даже после закрытия браузера/приложения
-setPersistence(auth, browserLocalPersistence).catch((error) => {
-  console.error('Ошибка установки persistence:', error);
-});

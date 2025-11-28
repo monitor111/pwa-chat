@@ -1,64 +1,78 @@
 // auth.js
-import { auth, db } from './firebase-config.js';
-import { signInAnonymously, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js';
+import { db } from './firebase-config.js';
 import { doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
 
+// Генерация уникального ID для устройства
+function generateDeviceId() {
+  return 'user_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+}
+
+// Получение или создание ID устройства
+function getDeviceId() {
+  let deviceId = localStorage.getItem('deviceId');
+  if (!deviceId) {
+    deviceId = generateDeviceId();
+    localStorage.setItem('deviceId', deviceId);
+  }
+  return deviceId;
+}
+
 // Функция для обеспечения авторизации
-export function ensureAuth(onReady) {
-  onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      // Сохраняем UID в localStorage при первом входе
-      if (!localStorage.getItem('savedUID')) {
-        localStorage.setItem('savedUID', user.uid);
-      }
-      
-      const displayName = localStorage.getItem('displayName') || ('User-' + user.uid.slice(-4));
-      try {
-        await setDoc(doc(db, 'users', user.uid), {
-          uid: user.uid,
-          name: displayName,
-          lastSeen: serverTimestamp(),
-          online: true
-        }, { merge: true });
-      } catch (e) {
-        console.error('Ошибка обновления Firestore:', e);
-      }
-      onReady(user);
-    } else {
-      // Проверяем, есть ли сохраненный пользователь
-      const savedUID = localStorage.getItem('savedUID');
-      const savedDisplayName = localStorage.getItem('displayName');
-      
-      // Если есть сохраненные данные, НЕ создаем нового пользователя
-      // Просто ждем, пока Firebase Auth восстановит сессию
-      if (savedUID && savedDisplayName) {
-        console.log('Ожидание восстановления сессии для:', savedDisplayName);
-        // Firebase Auth автоматически восстановит сессию при следующем onAuthStateChanged
-      } else {
-        // Только если это ПЕРВЫЙ заход - создаем анонимного пользователя
-        signInAnonymously(auth).catch(console.error);
-      }
-    }
-  });
+export async function ensureAuth(onReady) {
+  const deviceId = getDeviceId();
+  const displayName = localStorage.getItem('displayName') || ('User-' + deviceId.slice(-4));
+  
+  // Создаем объект пользователя
+  const user = {
+    uid: deviceId,
+    displayName: displayName
+  };
+  
+  try {
+    // Обновляем данные пользователя в Firestore
+    await setDoc(doc(db, 'users', deviceId), {
+      uid: deviceId,
+      name: displayName,
+      lastSeen: serverTimestamp(),
+      online: true
+    }, { merge: true });
+    
+    console.log('Пользователь авторизован:', displayName, deviceId);
+  } catch (e) {
+    console.error('Ошибка обновления Firestore:', e);
+  }
+  
+  onReady(user);
 }
 
 // Функция для выхода пользователя
 export async function signOutUser() {
-  const user = auth.currentUser;
-  if (user) {
-    try {
-      await setDoc(doc(db, 'users', user.uid), {
-        online: false,
-        lastSeen: serverTimestamp()
-      }, { merge: true });
-    } catch (e) {
-      console.error('Ошибка обновления Firestore при выходе:', e);
-    }
+  const deviceId = getDeviceId();
+  
+  try {
+    await setDoc(doc(db, 'users', deviceId), {
+      online: false,
+      lastSeen: serverTimestamp()
+    }, { merge: true });
+  } catch (e) {
+    console.error('Ошибка обновления Firestore при выходе:', e);
   }
   
-  // Очищаем сохраненные данные при выходе
-  localStorage.removeItem('savedUID');
+  // Очищаем все данные
+  localStorage.removeItem('deviceId');
   localStorage.removeItem('displayName');
+}
+
+// Функция для обновления статуса онлайн
+export async function updateOnlineStatus(isOnline) {
+  const deviceId = getDeviceId();
   
-  await signOut(auth).catch(console.error);
+  try {
+    await setDoc(doc(db, 'users', deviceId), {
+      online: isOnline,
+      lastSeen: serverTimestamp()
+    }, { merge: true });
+  } catch (e) {
+    console.error('Ошибка обновления статуса:', e);
+  }
 }
