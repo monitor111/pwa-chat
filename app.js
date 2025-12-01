@@ -1,11 +1,10 @@
 // app.js
-import { db, storage } from './firebase-config.js';
+import { db } from './firebase-config.js';
 import { ensureAuth, signOutUser } from './auth.js';
 import {
   collection, doc, setDoc, query, orderBy, onSnapshot,
   serverTimestamp, addDoc
 } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
-import { ref, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-storage.js';
 
 const loader = document.getElementById('loader');
 const main = document.getElementById('main');
@@ -55,6 +54,38 @@ async function requestNotifications() {
   if (Notification.permission === 'default') {
     try { await Notification.requestPermission(); } catch(e) {}
   }
+}
+
+// Функция сжатия изображения
+async function compressImage(file, maxWidth = 800, quality = 0.7) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        
+        // Сжимаем если больше maxWidth
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Конвертируем в base64 с сжатием
+        const base64 = canvas.toDataURL('image/jpeg', quality);
+        resolve(base64);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 // Функция для переключения между списком и чатом на мобильных
@@ -132,8 +163,7 @@ saveNameBtn.addEventListener('click', async () => {
 // ------------------ Выход ------------------
 signoutBtn.addEventListener('click', async () => {
   await signOutUser();
-  localStorage.removeItem('displayName');
-  location.reload();
+  alert('Вы вышли. Обновите страницу для нового входа.');
 });
 
 // ------------------ Открыть чат ------------------
@@ -187,6 +217,14 @@ attachBtn.addEventListener('click', () => imageInput.click());
 imageInput.addEventListener('change', async () => {
   const file = imageInput.files[0];
   if (!file) return;
+  
+  // Проверка типа файла
+  if (!file.type.startsWith('image/')) {
+    alert('Можно отправлять только изображения');
+    imageInput.value = '';
+    return;
+  }
+  
   await sendMessage(file);
   imageInput.value = '';
 });
@@ -196,26 +234,54 @@ async function sendMessage(file=null) {
   const text = (messageInput.value || '').trim();
   if (!currentChatId) return alert('Выберите пользователя для чата');
   if (!text && !file) return;
+  
   const messagesRef = collection(db, 'chats', currentChatId, 'messages');
-  let imageUrl = null;
+  let imageBase64 = null;
+  
   if (file) {
-    const path = `chat_images/${currentChatId}/${Date.now()}_${file.name}`;
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, file);
-    imageUrl = await getDownloadURL(storageRef);
+    try {
+      // Показываем индикатор загрузки
+      sendBtn.disabled = true;
+      sendBtn.textContent = '⏳';
+      
+      // Сжимаем изображение и конвертируем в base64
+      imageBase64 = await compressImage(file);
+      
+      // Проверяем размер (Firestore ограничение ~1MB на документ)
+      if (imageBase64.length > 900000) {
+        // Если слишком большое - сжимаем сильнее
+        imageBase64 = await compressImage(file, 600, 0.5);
+        if (imageBase64.length > 900000) {
+          alert('Изображение слишком большое. Выберите другое.');
+          sendBtn.disabled = false;
+          sendBtn.textContent = '➤';
+          return;
+        }
+      }
+    } catch (e) {
+      console.error('Ошибка обработки изображения:', e);
+      alert('Ошибка обработки изображения');
+      sendBtn.disabled = false;
+      sendBtn.textContent = '➤';
+      return;
+    }
   }
+  
   try {
     await addDoc(messagesRef, {
       from: me.uid,
       to: currentPeer.uid,
       text: text || null,
-      image: imageUrl,
+      image: imageBase64,
       timestamp: serverTimestamp()
     });
     messageInput.value = '';
   } catch(e) {
-    console.error(e);
-    alert('Ошибка отправки');
+    console.error('Ошибка отправки:', e);
+    alert('Ошибка отправки сообщения');
+  } finally {
+    sendBtn.disabled = false;
+    sendBtn.textContent = '➤';
   }
 }
 
@@ -228,7 +294,7 @@ function appendMessageToUI(id, data) {
   const time = data.timestamp ? new Date(data.timestamp.seconds*1000).toLocaleTimeString() : '';
   const who = (data.from === me.uid) ? 'Вы' : escapeHtml(currentPeer ? currentPeer.name : '');
   const textHtml = data.text ? `<div>${escapeHtml(data.text)}</div>` : '';
-  const imageHtml = data.image ? `<div><img src="${escapeHtml(data.image)}" alt="img"></div>` : '';
+  const imageHtml = data.image ? `<div><img src="${data.image}" alt="img" style="max-width:100%; border-radius:8px; margin-top:5px;"></div>` : '';
   div.innerHTML = `<div class="small text-muted">${who} · ${time}</div>${textHtml}${imageHtml}`;
   messagesDiv.appendChild(div);
   messagesDiv.scrollTop = messagesDiv.scrollHeight;
