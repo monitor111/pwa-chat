@@ -6,6 +6,8 @@ import {
   serverTimestamp, addDoc
 } from 'https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js';
 
+const IMGBB_API_KEY = '4eff2f3d0fac8f9a8824d3bdeca9d634';
+
 const loader = document.getElementById('loader');
 const main = document.getElementById('main');
 const meDisplay = document.getElementById('meDisplay');
@@ -56,36 +58,22 @@ async function requestNotifications() {
   }
 }
 
-// Функция сжатия изображения
-async function compressImage(file, maxWidth = 800, quality = 0.7) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        
-        // Сжимаем если больше maxWidth
-        if (width > maxWidth) {
-          height = (height * maxWidth) / width;
-          width = maxWidth;
-        }
-        
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        
-        // Конвертируем в base64 с сжатием
-        const base64 = canvas.toDataURL('image/jpeg', quality);
-        resolve(base64);
-      };
-      img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
+// Загрузка изображения на imgbb
+async function uploadToImgbb(file) {
+  const formData = new FormData();
+  formData.append('image', file);
+  
+  const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+    method: 'POST',
+    body: formData
   });
+  
+  if (!response.ok) {
+    throw new Error('Ошибка загрузки на imgbb');
+  }
+  
+  const data = await response.json();
+  return data.data.url; // Возвращаем URL загруженного изображения
 }
 
 // Функция для переключения между списком и чатом на мобильных
@@ -97,6 +85,36 @@ function showChat() {
 function showUsersList() {
   usersCol.classList.remove('hidden');
   chatCol.classList.remove('active');
+}
+
+// Открыть изображение на весь экран
+function openImageFullscreen(imageUrl) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.9);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: zoom-out;
+  `;
+  
+  const img = document.createElement('img');
+  img.src = imageUrl;
+  img.style.cssText = `
+    max-width: 90%;
+    max-height: 90%;
+    object-fit: contain;
+  `;
+  
+  overlay.appendChild(img);
+  overlay.addEventListener('click', () => overlay.remove());
+  document.body.appendChild(overlay);
 }
 
 // ------------------ Инициализация пользователя ------------------
@@ -225,6 +243,13 @@ imageInput.addEventListener('change', async () => {
     return;
   }
   
+  // Проверка размера (максимум 5MB)
+  if (file.size > 5 * 1024 * 1024) {
+    alert('Изображение слишком большое (макс. 5MB)');
+    imageInput.value = '';
+    return;
+  }
+  
   await sendMessage(file);
   imageInput.value = '';
 });
@@ -236,33 +261,24 @@ async function sendMessage(file=null) {
   if (!text && !file) return;
   
   const messagesRef = collection(db, 'chats', currentChatId, 'messages');
-  let imageBase64 = null;
+  let imageUrl = null;
   
   if (file) {
     try {
       // Показываем индикатор загрузки
       sendBtn.disabled = true;
       sendBtn.textContent = '⏳';
+      attachBtn.disabled = true;
       
-      // Сжимаем изображение и конвертируем в base64
-      imageBase64 = await compressImage(file);
+      // Загружаем на imgbb
+      imageUrl = await uploadToImgbb(file);
       
-      // Проверяем размер (Firestore ограничение ~1MB на документ)
-      if (imageBase64.length > 900000) {
-        // Если слишком большое - сжимаем сильнее
-        imageBase64 = await compressImage(file, 600, 0.5);
-        if (imageBase64.length > 900000) {
-          alert('Изображение слишком большое. Выберите другое.');
-          sendBtn.disabled = false;
-          sendBtn.textContent = '➤';
-          return;
-        }
-      }
     } catch (e) {
-      console.error('Ошибка обработки изображения:', e);
-      alert('Ошибка обработки изображения');
+      console.error('Ошибка загрузки изображения:', e);
+      alert('Ошибка загрузки изображения. Попробуйте еще раз.');
       sendBtn.disabled = false;
       sendBtn.textContent = '➤';
+      attachBtn.disabled = false;
       return;
     }
   }
@@ -272,7 +288,7 @@ async function sendMessage(file=null) {
       from: me.uid,
       to: currentPeer.uid,
       text: text || null,
-      image: imageBase64,
+      image: imageUrl,
       timestamp: serverTimestamp()
     });
     messageInput.value = '';
@@ -282,6 +298,7 @@ async function sendMessage(file=null) {
   } finally {
     sendBtn.disabled = false;
     sendBtn.textContent = '➤';
+    attachBtn.disabled = false;
   }
 }
 
@@ -294,11 +311,24 @@ function appendMessageToUI(id, data) {
   const time = data.timestamp ? new Date(data.timestamp.seconds*1000).toLocaleTimeString() : '';
   const who = (data.from === me.uid) ? 'Вы' : escapeHtml(currentPeer ? currentPeer.name : '');
   const textHtml = data.text ? `<div>${escapeHtml(data.text)}</div>` : '';
-  const imageHtml = data.image ? `<div><img src="${data.image}" alt="img" style="max-width:100%; border-radius:8px; margin-top:5px;"></div>` : '';
+  
+  let imageHtml = '';
+  if (data.image) {
+    imageHtml = `<div style="margin-top:5px;">
+      <img src="${data.image}" 
+           alt="img" 
+           style="max-width:100%; max-height:300px; border-radius:8px; cursor:pointer; display:block;" 
+           onclick="window.openImageFullscreen('${data.image}')">
+    </div>`;
+  }
+  
   div.innerHTML = `<div class="small text-muted">${who} · ${time}</div>${textHtml}${imageHtml}`;
   messagesDiv.appendChild(div);
   messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
+
+// Делаем функцию глобальной для onclick
+window.openImageFullscreen = openImageFullscreen;
 
 // ------------------ Проверка активного чата ------------------
 function isChatActiveWith(peerUid) {
@@ -310,7 +340,7 @@ function showInAppNotification(title, messageData) {
   if (Notification.permission === 'granted') {
     navigator.serviceWorker.getRegistration().then(reg => {
       if (reg) {
-        const body = messageData.text ? messageData.text : (messageData.image ? 'Фото' : '');
+        const body = messageData.text ? messageData.text : (messageData.image ? '📷 Фото' : '');
         reg.showNotification(title, {
           body,
           tag: currentChatId + '_' + Date.now(),
@@ -318,7 +348,7 @@ function showInAppNotification(title, messageData) {
           data: { chatId: currentChatId, from: messageData.from }
         });
       } else {
-        try { new Notification(title, { body: messageData.text || 'Фото' }); } catch(e){}
+        try { new Notification(title, { body: messageData.text || '📷 Фото' }); } catch(e){}
       }
     });
   }
